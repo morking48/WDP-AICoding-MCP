@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Logs
+logs/
+*.log
+
+# Build output
+dist/
+
+# Environment variables
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Token data (sensitive)
+config/tokens.json

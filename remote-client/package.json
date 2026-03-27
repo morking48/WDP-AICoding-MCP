@@ -1,0 +1,12 @@
+{
+  "name": "wdp-mcp-remote-client",
+  "version": "1.0.0",
+  "description": "WDP MCP 远程客户端 - 连接远程知识库服务器",
+  "main": "mcp-remote-client.js",
+  "scripts": {
+    "start": "node mcp-remote-client.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4"
+  }
+}
