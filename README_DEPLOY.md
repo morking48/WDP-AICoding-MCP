@@ -135,12 +135,17 @@ cd /opt/wdp-mcp-server/mcp-knowledge-server
 cat > .env << EOF
 PORT=3000
 HOST=127.0.0.1
-VALID_TOKENS=demo-token:private:管理员
-ADMIN_TOKEN=your-secret-admin-token
+VALID_TOKENS=                                # 初始Token（可选，启动后可使用命令添加）
+ADMIN_TOKEN=your-secret-admin-token          # 管理员Token
+# KNOWLEDGE_BASE_PATH=/opt/wdp-ai-coding/skills  # 知识库路径（根据实际部署位置调整）
 EOF
 
 # 使用 PM2 启动
 pm2 start dist/server.js --name wdp-mcp-server
+
+**环境变量说明**：
+- `VALID_TOKENS` 默认为空，建议启动后使用 `npm run token -- add` 命令动态添加
+- `KNOWLEDGE_BASE_PATH` 需要指向包含 skills 的目录，根据实际部署位置调整
 
 # 保存配置
 pm2 save
@@ -202,12 +207,93 @@ pm2 restart wdp-mcp-server
 
 ### 更新服务器
 
+#### 方式一：使用 Git（推荐，如果服务器上有 Git 仓库）
+
 ```bash
 cd /opt/wdp-mcp-server/mcp-knowledge-server
 git pull
 npm install
 npm run build
 pm2 restart wdp-mcp-server
+```
+
+#### 方式二：本地打包上传（无 Git 时）
+
+**步骤1：本地打包**
+```bash
+# 在本地项目目录执行
+cd D:\WorkFiles_Codex\mcp-knowledge-server
+
+# 编译项目
+npm run build
+
+# 打包（排除 node_modules 和 logs）
+tar -czvf wdp-update.tar.gz --exclude='node_modules' --exclude='logs' --exclude='.git' .
+```
+
+**步骤2：上传到服务器**
+```bash
+# 使用 scp 上传（Windows 可用 PowerShell 或 Git Bash）
+scp wdp-update.tar.gz user@your-server-ip:/opt/wdp-mcp-server/
+
+# 或使用 rsync（如果有）
+rsync -avz --exclude='node_modules' --exclude='logs' --exclude='.git' ./ user@your-server-ip:/opt/wdp-mcp-server/mcp-knowledge-server/
+```
+
+**步骤3：服务器端更新**
+```bash
+# SSH 登录服务器
+ssh user@your-server-ip
+
+# 进入目录
+cd /opt/wdp-mcp-server
+
+# 备份当前版本（可选）
+cp -r mcp-knowledge-server mcp-knowledge-server-backup-$(date +%Y%m%d)
+
+# 解压更新
+tar -xzvf wdp-update.tar.gz -C mcp-knowledge-server/
+
+# 进入项目目录
+cd mcp-knowledge-server
+
+# 安装依赖
+npm install
+
+# 重启服务
+pm2 restart wdp-mcp-server
+
+# 检查状态
+pm2 status
+pm2 logs wdp-mcp-server --lines 20
+```
+
+#### 方式三：仅更新 Skills 库
+
+如果只需要更新知识库内容（skills 目录）：
+
+```bash
+# 本地打包 skills
+ tar -czvf skills-update.tar.gz -C D:\WorkFiles_Codex\WDP_AIcoding skills
+
+# 上传到服务器
+scp skills-update.tar.gz user@your-server-ip:/opt/wdp-ai-coding/
+
+# 服务器端解压
+ssh user@your-server-ip "cd /opt/wdp-ai-coding && tar -xzvf skills-update.tar.gz"
+```
+
+#### 更新后验证
+
+```bash
+# 检查服务状态
+pm2 status
+
+# 查看日志
+pm2 logs wdp-mcp-server --lines 50
+
+# 测试健康检查
+curl http://localhost:3000/health
 ```
 
 ### 备份数据

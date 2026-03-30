@@ -69,11 +69,8 @@ pm2 logs wdp-mcp-server
 ### 添加 Token
 
 ```bash
-# 添加体验用户（public）
-npm run token -- add abc123 public 张三
-
-# 添加正式用户（private）
-npm run token -- add def456 private 李四
+# 添加新Token
+npm run token -- add abc123 张三
 ```
 
 ### 查看所有 Token
@@ -85,18 +82,19 @@ npm run token -- list
 显示结果：
 ```
 [Token List]
-Total: 2 (Public: 1, Private: 1)
-Token        Type    Name    Created
+Total: 3 (活跃: 2, 禁用: 1)
+Token        Name    Status    Created
 ----------------------------------------
-abc123...    public  张三    2026/3/27
-def456...    private 李四    2026/3/27
+abc123...    张三    活跃      2026/3/27
+def456...    李四    活跃      2026/3/27
+ghi789...    王五    已禁用    2026/3/27
 ```
 
-### 更新 Token 权限
+### 更新 Token 名称
 
 ```bash
-# 将体验用户升级为正式用户
-npm run token -- update abc123 --type private
+# 更新Token名称
+npm run token -- update abc123 --name 张三-新名称
 ```
 
 ### 禁用/启用 Token
@@ -117,15 +115,19 @@ npm run token -- delete abc123
 
 ## 环境变量配置
 
-创建 `.env` 文件：
+创建 `.env` 文件（可选，有默认值）：
 
 ```
-PORT=3000                                    # 服务端口
-HOST=0.0.0.0                                 # 监听地址
-VALID_TOKENS=demo:private:管理员              # 初始Token
-ADMIN_TOKEN=your-admin-secret-token          # 管理员Token
-KNOWLEDGE_BASE_PATH=../skills                # 知识库路径
+PORT=3000                                    # 服务端口 (默认: 3000)
+HOST=0.0.0.0                                 # 监听地址 (默认: 0.0.0.0)
+VALID_TOKENS=token1:名称1,token2:名称2       # 初始Token (默认: 空，需手动添加)
+ADMIN_TOKEN=your-admin-secret-token          # 管理员Token (默认: admin-secret-token)
+KNOWLEDGE_BASE_PATH=../WDP_AIcoding/skills   # 知识库路径 (默认: ../../WDP_AIcoding/skills)
 ```
+
+**注意**：
+- `VALID_TOKENS` 默认为空，启动后需使用 `npm run token -- add <token> <名称>` 添加
+- `KNOWLEDGE_BASE_PATH` 默认指向 `../../WDP_AIcoding/skills`，如需修改请设置环境变量
 
 ## API 接口说明
 
@@ -183,6 +185,12 @@ taskkill /PID <进程ID> /F
 1. 检查 Token 是否存在：`npm run token -- list`
 2. 确认 Token 未被禁用
 3. 检查客户端使用的 Token 格式是否正确
+
+### 知识库路径不存在
+
+1. 检查启动日志中的知识库路径：`📚 知识库路径: xxx`
+2. 确认路径指向正确的 skills 目录（默认：`../../WDP_AIcoding/skills`）
+3. 如需修改，设置环境变量：`set KNOWLEDGE_BASE_PATH=正确的路径`
 
 ### 远程无法访问
 

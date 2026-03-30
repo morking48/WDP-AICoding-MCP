@@ -34,10 +34,26 @@ import {
 import path from 'path';
 import fs from 'fs';
 
+// 敏感路径黑名单
+const SENSITIVE_PATHS = [
+  'wdp-internal-case-acquisition',
+  'ONLINE_COVERAGE_AUDIT.md'
+];
+
+/**
+ * 检查路径是否为敏感路径
+ */
+function isSensitivePath(filePath: string): boolean {
+  const lowerPath = filePath.toLowerCase();
+  return SENSITIVE_PATHS.some(sensitive => 
+    lowerPath.includes(sensitive.toLowerCase())
+  );
+}
+
 // 配置
 const KNOWLEDGE_BASE_PATH = process.env.KNOWLEDGE_BASE_PATH 
   ? path.resolve(process.env.KNOWLEDGE_BASE_PATH)
-  : path.resolve(__dirname, '../../skills');
+  : path.resolve(__dirname, '../../WDP_AIcoding/skills');
 
 /**
  * 读取知识文件
@@ -272,6 +288,19 @@ function createMCPServer(): Server {
         case 'get_skill_content': {
           if (!args || typeof args.path !== 'string') {
             throw new Error('缺少 path 参数');
+          }
+          
+          // 检查是否为敏感路径
+          if (isSensitivePath(args.path)) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: '错误: 无权访问该资源'
+                }
+              ],
+              isError: true
+            };
           }
           
           const content = readKnowledgeFile(args.path);

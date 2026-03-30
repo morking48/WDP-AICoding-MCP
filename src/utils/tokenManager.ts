@@ -7,17 +7,30 @@
 import fs from 'fs';
 import path from 'path';
 
-// Token权限类型
-export type TokenType = 'public' | 'private';
-
+// Token权限类型 - 简化为仅启用/禁用
 export interface TokenInfo {
-  type: TokenType;
   name: string;
   createdAt: string;
   updatedAt: string;
   disabled?: boolean;
   disabledAt?: string;
   disabledReason?: string;
+}
+
+// 敏感路径黑名单
+const SENSITIVE_PATHS = [
+  'wdp-internal-case-acquisition',
+  'ONLINE_COVERAGE_AUDIT.md'
+];
+
+/**
+ * 检查路径是否为敏感路径
+ */
+export function isSensitivePath(filePath: string): boolean {
+  const lowerPath = filePath.toLowerCase();
+  return SENSITIVE_PATHS.some(sensitive => 
+    lowerPath.includes(sensitive.toLowerCase())
+  );
 }
 
 // Token存储
@@ -34,12 +47,13 @@ let ADMIN_TOKEN: string = process.env.ADMIN_TOKEN || 'admin-secret-token';
  */
 export function initTokenManager(): void {
   // 从环境变量加载初始Token
+  // 格式：VALID_TOKENS=token1:名称1,token2:名称2
   const rawTokens = process.env.VALID_TOKENS || '';
   if (rawTokens) {
     rawTokens.split(',').forEach(tokenConfig => {
-      const [token, type, name] = tokenConfig.split(':');
-      if (token && type) {
-        addToken(token, type as TokenType, name || '未命名', false);
+      const [token, name] = tokenConfig.split(':');
+      if (token) {
+        addToken(token, name || '未命名', false);
       }
     });
   }
@@ -59,7 +73,6 @@ function loadTokensFromFile(): void {
       const data = JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf-8'));
       Object.entries(data.tokens || {}).forEach(([token, info]: [string, any]) => {
         TOKEN_STORE.set(token, {
-          type: info.type,
           name: info.name,
           createdAt: info.createdAt || new Date().toISOString(),
           updatedAt: info.updatedAt || new Date().toISOString(),
@@ -104,7 +117,6 @@ function saveTokensToFile(): void {
  */
 export function addToken(
   token: string, 
-  type: TokenType, 
   name: string,
   persist: boolean = true
 ): boolean {
@@ -114,7 +126,6 @@ export function addToken(
   
   const now = new Date().toISOString();
   TOKEN_STORE.set(token, {
-    type,
     name,
     createdAt: now,
     updatedAt: now
@@ -124,28 +135,27 @@ export function addToken(
     saveTokensToFile();
   }
   
-  console.log(`[TokenManager] 添加Token: ${name} (${type})`);
+  console.log(`[TokenManager] 添加Token: ${name}`);
   return true;
 }
 
 /**
- * 更新Token权限
+ * 更新Token信息
  */
 export function updateToken(
   token: string,
-  updates: { type?: TokenType; name?: string }
+  updates: { name?: string }
 ): boolean {
   const info = TOKEN_STORE.get(token);
   if (!info) {
     return false; // Token不存在
   }
   
-  if (updates.type) info.type = updates.type;
   if (updates.name) info.name = updates.name;
   info.updatedAt = new Date().toISOString();
   
   saveTokensToFile();
-  console.log(`[TokenManager] 更新Token: ${info.name} (${info.type})`);
+  console.log(`[TokenManager] 更新Token: ${info.name}`);
   return true;
 }
 
@@ -229,69 +239,40 @@ export function isTokenDisabled(token: string): boolean {
 }
 
 /**
- * 检查路径访问权限
- * 新策略：所有用户都可以访问所有路径，但公开用户不能查询技术实现细节
+ * 检查Token是否有效
  */
-export function checkPathPermission(token: string, path: string): { allowed: boolean; reason?: string } {
+export function verifyTokenAccess(token: string): { valid: boolean; reason?: string } {
   const info = TOKEN_STORE.get(token);
-  if (!info) return { allowed: false, reason: '无效的Token' };
+  if (!info) return { valid: false, reason: '无效的Token' };
   
-  // 检查Token是否被禁用
   if (info.disabled) {
-    return { allowed: false, reason: 'Token已被禁用' };
+    return { valid: false, reason: 'Token已被禁用' };
   }
   
-  // 所有用户（public/private）都可以访问所有路径
-  // 权限差异在内容查询层面控制
+  return { valid: true };
+}
+
+/**
+ * 检查路径访问权限
+ * 简化策略：已授权用户可以访问所有非敏感路径
+ */
+export function checkPathPermission(token: string, path: string): { allowed: boolean; reason?: string } {
+  // 先检查Token有效性
+  const tokenCheck = verifyTokenAccess(token);
+  if (!tokenCheck.valid) {
+    return { allowed: false, reason: tokenCheck.reason };
+  }
+  
+  // 检查是否为敏感路径
+  if (isSensitivePath(path)) {
+    return { allowed: false, reason: '无权访问该资源' };
+  }
+  
   return { allowed: true };
 }
 
 /**
- * 检查是否可以查询skill详细内容（SKILL.md）
- * 公开用户：不能查询SKILL.md（只能读取GUIDE.md等使用指南）
- * 私有用户：可以查询所有内容
- */
-export function canQuerySkillDetail(token: string): boolean {
-  const info = TOKEN_STORE.get(token);
-  if (!info) return false;
-  if (info.disabled) return false;
-  
-  // 只有private用户可以查询SKILL.md详细内容
-  return info.type === 'private';
-}
-
-/**
- * 检查是否可以查询使用指南（非SKILL.md文件）
- * 公开用户：可以读取GUIDE.md、OVERVIEW.md等使用指南
- * 私有用户：可以查询所有内容
- */
-export function canQueryGuide(token: string): boolean {
-  const info = TOKEN_STORE.get(token);
-  if (!info) return false;
-  if (info.disabled) return false;
-  
-  // public和private都可以读取使用指南
-  return true;
-}
-
-/**
- * 获取推荐读取的文件路径
- * 根据token类型返回不同的文件路径
- */
-export function getRecommendedPath(token: string, skillName: string): string {
-  const info = TOKEN_STORE.get(token);
-  if (!info || info.disabled) return `${skillName}/GUIDE.md`;
-  
-  if (info.type === 'private') {
-    return `${skillName}/SKILL.md`;
-  } else {
-    // public用户推荐使用GUIDE.md
-    return `${skillName}/GUIDE.md`;
-  }
-}
-
-/**
- * 获取Token权限说明
+ * 获取Token状态说明
  */
 export function getTokenPermissionDescription(token: string): string {
   const info = TOKEN_STORE.get(token);
@@ -301,11 +282,7 @@ export function getTokenPermissionDescription(token: string): string {
     return `已禁用 (${info.disabledReason || '无原因'})`;
   }
   
-  if (info.type === 'private') {
-    return '完整权限：可访问所有内容，可查询skill详细内容';
-  } else {
-    return '体验权限：可访问所有内容，不可查询skill详细内容';
-  }
+  return '已授权：可访问所有非敏感内容';
 }
 
 /**
@@ -336,15 +313,13 @@ export function getValidTokens(): string[] {
  */
 export function getTokenStats(): {
   total: number;
-  public: number;
-  private: number;
+  active: number;
   disabled: number;
 } {
   const tokens = Array.from(TOKEN_STORE.values());
   return {
     total: tokens.length,
-    public: tokens.filter(t => t.type === 'public' && !t.disabled).length,
-    private: tokens.filter(t => t.type === 'private' && !t.disabled).length,
+    active: tokens.filter(t => !t.disabled).length,
     disabled: tokens.filter(t => t.disabled).length
   };
 }

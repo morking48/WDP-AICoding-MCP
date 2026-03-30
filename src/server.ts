@@ -29,39 +29,33 @@ import {
   getValidTokens,
   getTokenStats,
   checkPathPermission as checkTokenPathPermission,
-  canQuerySkillDetail,
-  canQueryGuide,
-  getRecommendedPath,
   isTokenDisabled,
-  getTokenPermissionDescription
+  getTokenPermissionDescription,
+  isSensitivePath
 } from './utils/tokenManager';
 
 // 配置
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';  // 默认监听所有网络接口，支持远程访问
 
-// Token权限配置：公开Token只能访问official，私有Token可以访问全部
-const TOKEN_PERMISSIONS: { [token: string]: { type: 'public' | 'private'; name: string } } = {};
-
 // 从环境变量加载Token配置
-// 格式：VALID_TOKENS=token1:public:名称1,token2:private:名称2
-const rawTokens = process.env.VALID_TOKENS || 'demo-token:private:管理员';
+// 格式：VALID_TOKENS=token1:名称1,token2:名称2
+// 如果没有设置，默认为空（需要管理员手动添加）
+const rawTokens = process.env.VALID_TOKENS || '';
 const VALID_TOKENS: string[] = [];
 
-rawTokens.split(',').forEach(tokenConfig => {
-  const [token, type, name] = tokenConfig.split(':');
-  if (token && type) {
-    TOKEN_PERMISSIONS[token] = { 
-      type: type as 'public' | 'private', 
-      name: name || '未命名用户' 
-    };
-    VALID_TOKENS.push(token);
-  }
-});
+if (rawTokens) {
+  rawTokens.split(',').forEach(tokenConfig => {
+    const [token, name] = tokenConfig.split(':');
+    if (token) {
+      VALID_TOKENS.push(token);
+    }
+  });
+}
 
 const KNOWLEDGE_BASE_PATH = process.env.KNOWLEDGE_BASE_PATH 
   ? path.resolve(process.env.KNOWLEDGE_BASE_PATH)
-  : path.resolve(__dirname, '../../skills');
+  : path.resolve(__dirname, '../../WDP_AIcoding/skills');
 const LOGS_PATH = path.resolve(__dirname, '../logs/access.log');
 
 // Express 应用
@@ -112,8 +106,6 @@ const logAccess = (req: Request, action: string, data: any = {}) => {
   
   // 获取用户信息
   const userInfo = (req as any).userInfo;
-  const userToken = (req as any).userToken;
-  const tokenType = userInfo?.type || 'unknown';
   const userName = userInfo?.name || 'anonymous';
   
   // 记录开始时间（用于计算响应时间）
@@ -155,7 +147,6 @@ const logAccess = (req: Request, action: string, data: any = {}) => {
         context: {
           userInput: data.path,
           routedSkill: data.path,
-          tokenType,
           userName
         },
         recoverable: true,
@@ -169,7 +160,7 @@ const logAccess = (req: Request, action: string, data: any = {}) => {
         errorCategory: 'AUTH_FAILED',
         severity: 'high',
         errorMessage: data.reason || 'Authentication failed',
-        context: { tokenType, userName },
+        context: { userName },
         recoverable: false,
         userImpact: 'User cannot access system'
       });
@@ -184,7 +175,6 @@ const logAccess = (req: Request, action: string, data: any = {}) => {
     userAgent: req.headers['user-agent'],
     sessionId,
     userName,
-    tokenType,
     responseTimeMs: Date.now() - startTime,
     ...data
   };
@@ -284,20 +274,12 @@ app.get('/api/knowledge', authMiddleware, (req: Request, res: Response) => {
     });
   }
   
-  // 检查是否是skill详细内容（SKILL.md文件）
-  const isSkillDetail = skillPath.endsWith('SKILL.md') || skillPath.endsWith('skill.md');
-  
-  // 如果是skill详细内容，检查是否有权限
-  if (isSkillDetail && !canQuerySkillDetail(token)) {
-    logAccess(req, 'ACCESS_DENIED', { path: skillPath, reason: '公开用户不能查询skill详细内容' });
+  // 检查是否为敏感路径
+  if (isSensitivePath(skillPath)) {
+    logAccess(req, 'ACCESS_DENIED', { path: skillPath, reason: '敏感资源' });
     return res.status(403).json({ 
-      error: '无权访问详细内容',
-      message: '体验用户可查看所有功能，但无法查询技术实现细节。如需完整访问权限，请联系管理员升级为正式用户。',
-      upgradeInfo: {
-        current: '体验用户（public）',
-        upgradeTo: '正式用户（private）',
-        contact: '请联系管理员获取完整访问权限'
-      }
+      error: '无权访问该资源',
+      message: '该资源受到保护，无法访问'
     });
   }
   
@@ -333,19 +315,12 @@ app.post('/api/query', authMiddleware, (req: Request, res: Response) => {
   
   // 如果指定了具体路径，检查权限
   if (skill_path && typeof skill_path === 'string') {
-    // 检查是否是skill详细内容
-    const isSkillDetail = skill_path.endsWith('SKILL.md') || skill_path.endsWith('skill.md');
-    
-    if (isSkillDetail && !canQuerySkillDetail(token)) {
-      logAccess(req, 'ACCESS_DENIED', { path: skill_path, reason: '公开用户不能查询skill详细内容' });
+    // 检查是否为敏感路径
+    if (isSensitivePath(skill_path)) {
+      logAccess(req, 'ACCESS_DENIED', { path: skill_path, reason: '敏感资源' });
       return res.status(403).json({ 
-        error: '无权访问详细内容',
-        message: '体验用户可查看所有功能，但无法查询技术实现细节。如需完整访问权限，请联系管理员升级为正式用户。',
-        upgradeInfo: {
-          current: '体验用户（public）',
-          upgradeTo: '正式用户（private）',
-          contact: '请联系管理员获取完整访问权限'
-        }
+        error: '无权访问该资源',
+        message: '该资源受到保护，无法访问'
       });
     }
     
@@ -511,73 +486,15 @@ const MCP_TOOLS = [
 
 /**
  * 处理 start_wdp_workflow 工具调用
- * 根据token类型返回不同的工作流指导
  */
 function handleStartWdpWorkflow(args: any, token?: string) {
   if (!args || typeof args.user_requirement !== 'string') {
     throw new Error('缺少 user_requirement 参数');
   }
   
-  // 判断token类型
-  const isPrivate = token ? canQuerySkillDetail(token) : false;
-  const entryPath = isPrivate ? 'wdp-entry-agent/SKILL.md' : 'wdp-entry-agent/GUIDE.md';
-  const intentPath = isPrivate ? 'wdp-intent-orchestrator/SKILL.md' : 'wdp-intent-orchestrator/GUIDE.md';
-  
-  // 根据token类型返回不同的工作流
-  if (!isPrivate) {
-    // Public/商业用户：返回简化版工作流
-    return {
-      title: '🔥 WDP 开发工作流启动（商业用户版）',
-      user_requirement: args.user_requirement,
-      notice: '【重要】您当前使用的是商业用户权限，可以获得WDP功能使用指导，但无法查看完整技术实现细节。',
-      workflow_steps: [
-        {
-          step: 1,
-          name: '入口路由判断',
-          action: `读取 ${entryPath}`,
-          description: '获取WDP入口路由判断指南（使用说明版）',
-          tool_call: {
-            tool: 'get_skill_content',
-            path: entryPath
-          },
-          fallback: '如果GUIDE.md不存在，请联系管理员获取使用权限'
-        },
-        {
-          step: 2,
-          name: '意图编排与需求分析',
-          action: `读取 ${intentPath}`,
-          description: '获取需求分析指导（使用说明版）',
-          tool_call: {
-            tool: 'get_skill_content',
-            path: intentPath
-          }
-        },
-        {
-          step: 3,
-          name: '获取实现方案',
-          action: '联系管理员或升级权限',
-          description: '商业用户可通过AI助手使用WDP功能，如需查看完整技术实现，请联系管理员升级为内部用户权限',
-          contact_info: {
-            message: '如需完整技术文档访问权限，请联系管理员',
-            current_level: '商业用户（public）',
-            upgrade_to: '内部用户（private）'
-          }
-        }
-      ],
-      important_notes: [
-        '✅ 商业用户可以通过AI助手使用WDP所有功能',
-        '✅ 可以获得功能使用指导和最佳实践建议',
-        '⚠️ 无法查看SKILL.md中的完整技术实现代码',
-        '⚠️ 无法直接复制技术实现细节',
-        '💡 如需升级权限，请联系管理员'
-      ],
-      next_action: `请执行 Step 1：使用 get_skill_content 工具读取 ${entryPath} 获取入口指导`
-    };
-  }
-  
-  // Private/内部用户：返回完整工作流
+  // 返回完整工作流
   return {
-    title: '🔥 WDP 开发工作流启动（内部用户版）',
+    title: '🔥 WDP 开发工作流启动',
     user_requirement: args.user_requirement,
     workflow_steps: [
       {
@@ -683,11 +600,10 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
       
       // 如果指定了具体路径，检查权限
       if (args.skill_path && typeof args.skill_path === 'string') {
-        const isSkillDetail = args.skill_path.endsWith('SKILL.md') || args.skill_path.endsWith('skill.md');
-        
-        if (isSkillDetail && !canQuerySkillDetail(requestToken)) {
+        // 检查是否为敏感路径
+        if (isSensitivePath(args.skill_path)) {
           return {
-            content: [{ type: 'text', text: '错误: 体验用户无法查看技术实现细节。如需完整访问权限，请联系管理员升级为正式用户。' }],
+            content: [{ type: 'text', text: '错误: 无权访问该资源' }],
             isError: true
           };
         }
@@ -726,13 +642,10 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
         throw new Error('缺少 path 参数');
       }
       
-      // 检查是否是skill详细内容（SKILL.md文件）
-      const isSkillDetail = args.path.endsWith('SKILL.md') || args.path.endsWith('skill.md');
-      
-      // 如果是skill详细内容，检查是否有权限
-      if (isSkillDetail && !canQuerySkillDetail(requestToken)) {
+      // 检查是否为敏感路径
+      if (isSensitivePath(args.path)) {
         return {
-          content: [{ type: 'text', text: '错误: 体验用户无法查看技术实现细节。如需完整访问权限，请联系管理员升级为正式用户。' }],
+          content: [{ type: 'text', text: '错误: 无权访问该资源' }],
           isError: true
         };
       }
@@ -872,7 +785,6 @@ const adminMiddleware = (req: Request, res: Response, next: NextFunction) => {
 app.get('/admin/tokens', adminMiddleware, (req: Request, res: Response) => {
   const tokens = listTokens().map(({ token, info }) => ({
     token: token.substring(0, 8) + '...', // 隐藏完整Token
-    type: info.type,
     name: info.name,
     disabled: info.disabled,
     disabledReason: info.disabledReason,
@@ -892,27 +804,23 @@ app.get('/admin/tokens', adminMiddleware, (req: Request, res: Response) => {
  * POST /admin/tokens
  */
 app.post('/admin/tokens', adminMiddleware, (req: Request, res: Response) => {
-  const { token, type, name } = req.body;
+  const { token, name } = req.body;
   
-  if (!token || !type || !name) {
-    return res.status(400).json({ error: '缺少必要参数：token, type, name' });
+  if (!token || !name) {
+    return res.status(400).json({ error: '缺少必要参数：token, name' });
   }
-  
-  if (type !== 'public' && type !== 'private') {
-    return res.status(400).json({ error: 'type必须是 public 或 private' });
-  }
-  
-  const success = addToken(token, type, name);
+
+  const success = addToken(token, name);
   
   if (!success) {
     return res.status(409).json({ error: 'Token已存在' });
   }
   
-  logAccess(req, 'ADMIN_ADD_TOKEN', { name, type });
+  logAccess(req, 'ADMIN_ADD_TOKEN', { name });
   
   res.json({
     success: true,
-    message: `Token添加成功: ${name} (${type})`,
+    message: `Token添加成功: ${name}`,
     token: token.substring(0, 8) + '...'
   });
 });
@@ -923,15 +831,15 @@ app.post('/admin/tokens', adminMiddleware, (req: Request, res: Response) => {
  */
 app.put('/admin/tokens/:token', adminMiddleware, (req: Request, res: Response) => {
   const { token } = req.params;
-  const { type, name } = req.body;
+  const { name } = req.body;
   
-  const success = updateToken(token, { type, name });
+  const success = updateToken(token, { name });
   
   if (!success) {
     return res.status(404).json({ error: 'Token不存在' });
   }
   
-  logAccess(req, 'ADMIN_UPDATE_TOKEN', { token: token.substring(0, 8) + '...', type, name });
+  logAccess(req, 'ADMIN_UPDATE_TOKEN', { token: token.substring(0, 8) + '...', name });
   
   res.json({
     success: true,
@@ -1026,6 +934,16 @@ server.listen(Number(PORT), HOST, () => {
   console.log(`  GET  /api/knowledge       - 获取知识内容`);
   console.log(`  POST /api/query          - 查询知识`);
   console.log(`  GET  /api/skills         - 列出所有技能`);
-  console.log(`\n认证方式: Bearer Token`);
-  console.log(`有效 Token: ${VALID_TOKENS.join(', ')}`);
+  
+  // 检查是否有有效Token（环境变量 + 持久化文件）
+  const allTokens = getValidTokens();
+  if (allTokens.length === 0) {
+    console.log(`\n⚠️  警告: 当前没有配置任何有效Token`);
+    console.log(`   请使用以下命令添加Token:`);
+    console.log(`   npm run token -- add <token> <名称>`);
+    console.log(`   或设置 VALID_TOKENS 环境变量`);
+  } else {
+    console.log(`\n认证方式: Bearer Token`);
+    console.log(`有效 Token: ${allTokens.length} 个`);
+  }
 });

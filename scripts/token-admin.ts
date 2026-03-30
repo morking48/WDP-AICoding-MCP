@@ -45,14 +45,15 @@ async function listTokens() {
     const data = await apiRequest('GET', '/admin/tokens');
     
     console.log('\n📋 Token列表\n');
-    console.log(`总计: ${data.stats.total} (公开: ${data.stats.public}, 私有: ${data.stats.private})\n`);
+    console.log(`总计: ${data.stats.total} (活跃: ${data.stats.active}, 禁用: ${data.stats.disabled})\n`);
     
-    console.log('Token\t\t类型\t名称\t\t创建时间');
+    console.log('Token\t\t名称\t\t状态\t\t创建时间');
     console.log('─'.repeat(80));
     
     data.tokens.forEach((t: any) => {
       const date = new Date(t.createdAt).toLocaleDateString();
-      console.log(`${t.token}\t${t.type}\t${t.name}\t${date}`);
+      const status = t.disabled ? '已禁用' : '活跃';
+      console.log(`${t.token}\t${t.name}\t${status}\t${date}`);
     });
     
     console.log();
@@ -61,21 +62,16 @@ async function listTokens() {
   }
 }
 
-async function addToken(token: string, type: string, name: string) {
+async function addToken(token: string, name: string) {
   try {
-    if (type !== 'public' && type !== 'private') {
-      console.error('❌ 类型必须是 public 或 private');
-      return;
-    }
-    
-    const data = await apiRequest('POST', '/admin/tokens', { token, type, name });
+    const data = await apiRequest('POST', '/admin/tokens', { token, name });
     console.log(`✅ ${data.message}`);
   } catch (error: any) {
     console.error('❌ 错误:', error.message);
   }
 }
 
-async function updateToken(token: string, updates: { type?: string; name?: string }) {
+async function updateToken(token: string, updates: { name?: string }) {
   try {
     const data = await apiRequest('PUT', `/admin/tokens/${token}`, updates);
     console.log(`✅ ${data.message}`);
@@ -94,24 +90,26 @@ async function deleteToken(token: string) {
 }
 
 function showHelp() {
-  console.log(`
+    console.log(`
 🎫 WDP Token管理脚本
 
 使用方法:
   npm run token -- <命令> [参数]
 
 命令:
-  list                          列出所有Token
-  add <token> <type> <name>    添加新Token
-  update <token> [选项]        更新Token
-    --type <public|private>    修改类型
-    --name <name>              修改名称
-  delete <token>               删除Token
+  list                    列出所有Token
+  add <token> <name>      添加新Token
+  update <token> --name   更新Token名称
+  delete <token>          删除Token
+  disable <token> [原因]  禁用Token
+  enable <token>          启用Token
 
 示例:
   npm run token -- list
-  npm run token -- add abc123 public 客户A
-  npm run token -- update abc123 --type private
+  npm run token -- add abc123 客户A
+  npm run token -- update abc123 --name 客户A-新名称
+  npm run token -- disable abc123 欠费停用
+  npm run token -- enable abc123
   npm run token -- delete abc123
 
 环境变量:
@@ -130,24 +128,19 @@ async function main() {
       break;
       
     case 'add':
-      if (args.length < 4) {
-        console.error('❌ 用法: npm run token -- add <token> <type> <name>');
+      if (args.length < 3) {
+        console.error('❌ 用法: npm run token -- add <token> <name>');
         process.exit(1);
       }
-      await addToken(args[1], args[2], args[3]);
+      await addToken(args[1], args[2]);
       break;
       
     case 'update':
-      if (args.length < 4) {
-        console.error('❌ 用法: npm run token -- update <token> --type <type> --name <name>');
+      if (args.length < 4 || args[2] !== '--name') {
+        console.error('❌ 用法: npm run token -- update <token> --name <new-name>');
         process.exit(1);
       }
-      const updates: any = {};
-      for (let i = 2; i < args.length; i += 2) {
-        if (args[i] === '--type') updates.type = args[i + 1];
-        if (args[i] === '--name') updates.name = args[i + 1];
-      }
-      await updateToken(args[1], updates);
+      await updateToken(args[1], { name: args[3] });
       break;
       
     case 'delete':
