@@ -18,9 +18,19 @@ const LOGS_ROOT = path.resolve(__dirname, '../../logs');
 // 内存队列（批量写入）
 const logQueues: { [key: string]: string[] } = {};
 const flushTimers: { [key: string]: NodeJS.Timeout | null } = {};
+const queueSizes: { [key: string]: number } = {}; // 记录每个队列的字节大小
+
+// 写入配置
+const FLUSH_CONFIG = {
+  maxLines: 50,           // 最多缓存50行
+  maxBytes: 1024 * 1024, // 最多缓存1MB
+  maxDelayMs: 5000,      // 最多延迟5秒
+  profileSaveInterval: 5 * 60 * 1000 // 每5分钟保存用户画像
+};
 
 // 用户画像缓存（内存中维护，定期写入文件）
 const userProfiles: Map<string, UserProfile> = new Map();
+let profileSaveTimer: NodeJS.Timeout | null = null;
 
 // 会话管理
 const sessionMap = new Map<string, SessionInfo>();
@@ -107,26 +117,33 @@ function asyncWriteLog(logType: string, data: any, userName?: string): void {
  */
 function queueLogWrite(queueKey: string, logFile: string, data: any): void {
   const logLine = JSON.stringify(data);
+  const lineBytes = Buffer.byteLength(logLine, 'utf8');
   
   if (!logQueues[queueKey]) {
     logQueues[queueKey] = [];
+    queueSizes[queueKey] = 0;
   }
   
   logQueues[queueKey].push(logLine);
+  queueSizes[queueKey] += lineBytes;
   
-  // 批量写入：每100ms或满50条时写入
-  if (!flushTimers[queueKey]) {
-    flushTimers[queueKey] = setTimeout(() => {
-      flushLogQueue(queueKey, logFile);
-    }, 100);
-  }
+  // 检查是否需要立即写入（行数或大小超限）
+  const shouldFlushNow = 
+    logQueues[queueKey].length >= FLUSH_CONFIG.maxLines ||
+    queueSizes[queueKey] >= FLUSH_CONFIG.maxBytes;
   
-  if (logQueues[queueKey].length >= 50) {
+  if (shouldFlushNow) {
+    // 立即写入，取消定时器
     if (flushTimers[queueKey]) {
       clearTimeout(flushTimers[queueKey]);
       flushTimers[queueKey] = null;
     }
     flushLogQueue(queueKey, logFile);
+  } else if (!flushTimers[queueKey]) {
+    // 设置定时器，确保数据不会延迟太久
+    flushTimers[queueKey] = setTimeout(() => {
+      flushLogQueue(queueKey, logFile);
+    }, FLUSH_CONFIG.maxDelayMs);
   }
 }
 
@@ -139,14 +156,38 @@ function flushLogQueue(queueKey: string, logFile: string): void {
   }
   
   const lines = logQueues[queueKey].join('\n') + '\n';
+  const lineCount = logQueues[queueKey].length;
+  const bytesWritten = queueSizes[queueKey] || 0;
+  
+  // 清空队列
   logQueues[queueKey] = [];
+  queueSizes[queueKey] = 0;
   flushTimers[queueKey] = null;
   
   try {
     fs.appendFileSync(logFile, lines);
+    
+    // 调试信息（超过50条时显示）
+    if (lineCount >= 50) {
+      console.log(`[Logger] 批量写入 ${lineCount} 条日志 (${(bytesWritten / 1024).toFixed(1)}KB) → ${path.basename(logFile)}`);
+    }
   } catch (error) {
     console.error(`[Logger] 写入日志失败: ${error}`);
   }
+}
+
+/**
+ * 启动定期保存用户画像的定时器
+ */
+function startProfileSaveTimer(): void {
+  if (profileSaveTimer) {
+    clearInterval(profileSaveTimer);
+  }
+  
+  profileSaveTimer = setInterval(() => {
+    saveUserProfiles();
+    console.log(`[Logger] 自动保存用户画像，当前活跃用户: ${userProfiles.size} 人`);
+  }, FLUSH_CONFIG.profileSaveInterval);
 }
 
 /**
@@ -536,13 +577,59 @@ export function getActiveUsers(): string[] {
   return Array.from(userProfiles.keys());
 }
 
+/**
+ * 获取当前队列状态（用于监控）
+ */
+export function getQueueStatus(): { [key: string]: { lines: number; bytes: number } } {
+  const status: { [key: string]: { lines: number; bytes: number } } = {};
+  
+  Object.keys(logQueues).forEach(key => {
+    status[key] = {
+      lines: logQueues[key]?.length || 0,
+      bytes: queueSizes[key] || 0
+    };
+  });
+  
+  return status;
+}
+
+/**
+ * 手动触发所有队列写入（用于监控或优雅关闭）
+ */
+export function flushAllQueues(): void {
+  const todayDir = getTodayLogDir();
+  
+  Object.keys(logQueues).forEach(queueKey => {
+    const [logType, userName] = queueKey.split(':');
+    if (userName && userName !== 'all') {
+      const userDir = getUserLogDir(userName);
+      const logFile = path.join(userDir, `${logType}.jsonl`);
+      flushLogQueue(queueKey, logFile);
+    } else {
+      const logFile = path.join(todayDir, `${logType}.jsonl`);
+      flushLogQueue(queueKey, logFile);
+    }
+  });
+  
+  console.log('[Logger] 所有日志队列已刷新');
+}
+
+// 启动定期保存
+startProfileSaveTimer();
+
 // 程序退出前刷新日志
 process.on('exit', flushAllLogs);
 process.on('SIGINT', () => {
   flushAllLogs();
+  if (profileSaveTimer) {
+    clearInterval(profileSaveTimer);
+  }
   process.exit(0);
 });
 process.on('SIGTERM', () => {
   flushAllLogs();
+  if (profileSaveTimer) {
+    clearInterval(profileSaveTimer);
+  }
   process.exit(0);
 });
