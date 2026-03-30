@@ -247,8 +247,8 @@ export function checkPathPermission(token: string, path: string): { allowed: boo
 }
 
 /**
- * 检查是否可以查询skill详细内容
- * 公开用户：不能查询skill详细内容（只能体验功能）
+ * 检查是否可以查询skill详细内容（SKILL.md）
+ * 公开用户：不能查询SKILL.md（只能读取GUIDE.md等使用指南）
  * 私有用户：可以查询所有内容
  */
 export function canQuerySkillDetail(token: string): boolean {
@@ -256,8 +256,38 @@ export function canQuerySkillDetail(token: string): boolean {
   if (!info) return false;
   if (info.disabled) return false;
   
-  // 只有private用户可以查询skill详细内容
+  // 只有private用户可以查询SKILL.md详细内容
   return info.type === 'private';
+}
+
+/**
+ * 检查是否可以查询使用指南（非SKILL.md文件）
+ * 公开用户：可以读取GUIDE.md、OVERVIEW.md等使用指南
+ * 私有用户：可以查询所有内容
+ */
+export function canQueryGuide(token: string): boolean {
+  const info = TOKEN_STORE.get(token);
+  if (!info) return false;
+  if (info.disabled) return false;
+  
+  // public和private都可以读取使用指南
+  return true;
+}
+
+/**
+ * 获取推荐读取的文件路径
+ * 根据token类型返回不同的文件路径
+ */
+export function getRecommendedPath(token: string, skillName: string): string {
+  const info = TOKEN_STORE.get(token);
+  if (!info || info.disabled) return `${skillName}/GUIDE.md`;
+  
+  if (info.type === 'private') {
+    return `${skillName}/SKILL.md`;
+  } else {
+    // public用户推荐使用GUIDE.md
+    return `${skillName}/GUIDE.md`;
+  }
 }
 
 /**

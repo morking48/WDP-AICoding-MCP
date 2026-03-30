@@ -30,6 +30,8 @@ import {
   getTokenStats,
   checkPathPermission as checkTokenPathPermission,
   canQuerySkillDetail,
+  canQueryGuide,
+  getRecommendedPath,
   isTokenDisabled,
   getTokenPermissionDescription
 } from './utils/tokenManager';
@@ -509,14 +511,73 @@ const MCP_TOOLS = [
 
 /**
  * 处理 start_wdp_workflow 工具调用
+ * 根据token类型返回不同的工作流指导
  */
-function handleStartWdpWorkflow(args: any) {
+function handleStartWdpWorkflow(args: any, token?: string) {
   if (!args || typeof args.user_requirement !== 'string') {
     throw new Error('缺少 user_requirement 参数');
   }
   
+  // 判断token类型
+  const isPrivate = token ? canQuerySkillDetail(token) : false;
+  const entryPath = isPrivate ? 'wdp-entry-agent/SKILL.md' : 'wdp-entry-agent/GUIDE.md';
+  const intentPath = isPrivate ? 'wdp-intent-orchestrator/SKILL.md' : 'wdp-intent-orchestrator/GUIDE.md';
+  
+  // 根据token类型返回不同的工作流
+  if (!isPrivate) {
+    // Public/商业用户：返回简化版工作流
+    return {
+      title: '🔥 WDP 开发工作流启动（商业用户版）',
+      user_requirement: args.user_requirement,
+      notice: '【重要】您当前使用的是商业用户权限，可以获得WDP功能使用指导，但无法查看完整技术实现细节。',
+      workflow_steps: [
+        {
+          step: 1,
+          name: '入口路由判断',
+          action: `读取 ${entryPath}`,
+          description: '获取WDP入口路由判断指南（使用说明版）',
+          tool_call: {
+            tool: 'get_skill_content',
+            path: entryPath
+          },
+          fallback: '如果GUIDE.md不存在，请联系管理员获取使用权限'
+        },
+        {
+          step: 2,
+          name: '意图编排与需求分析',
+          action: `读取 ${intentPath}`,
+          description: '获取需求分析指导（使用说明版）',
+          tool_call: {
+            tool: 'get_skill_content',
+            path: intentPath
+          }
+        },
+        {
+          step: 3,
+          name: '获取实现方案',
+          action: '联系管理员或升级权限',
+          description: '商业用户可通过AI助手使用WDP功能，如需查看完整技术实现，请联系管理员升级为内部用户权限',
+          contact_info: {
+            message: '如需完整技术文档访问权限，请联系管理员',
+            current_level: '商业用户（public）',
+            upgrade_to: '内部用户（private）'
+          }
+        }
+      ],
+      important_notes: [
+        '✅ 商业用户可以通过AI助手使用WDP所有功能',
+        '✅ 可以获得功能使用指导和最佳实践建议',
+        '⚠️ 无法查看SKILL.md中的完整技术实现代码',
+        '⚠️ 无法直接复制技术实现细节',
+        '💡 如需升级权限，请联系管理员'
+      ],
+      next_action: `请执行 Step 1：使用 get_skill_content 工具读取 ${entryPath} 获取入口指导`
+    };
+  }
+  
+  // Private/内部用户：返回完整工作流
   return {
-    title: '🔥 WDP 开发工作流启动',
+    title: '🔥 WDP 开发工作流启动（内部用户版）',
     user_requirement: args.user_requirement,
     workflow_steps: [
       {
@@ -609,7 +670,7 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
   
   switch (name) {
     case 'start_wdp_workflow': {
-      const result = handleStartWdpWorkflow(args);
+      const result = handleStartWdpWorkflow(args, requestToken);
       return {
         content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
       };
