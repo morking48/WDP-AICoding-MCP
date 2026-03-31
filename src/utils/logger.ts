@@ -11,9 +11,34 @@
 import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import {
+  initDatabase,
+  dbLogAccess,
+  dbLogRequest,
+  dbLogSkill,
+  dbLogError,
+  dbUpdateUserStats
+} from './dbLogger';
 
 // 日志根目录
 const LOGS_ROOT = path.resolve(__dirname, '../../logs');
+
+// 数据库初始化标志
+let dbInitialized = false;
+
+/**
+ * 初始化日志系统（包括数据库）
+ */
+export async function initLogger(): Promise<void> {
+  try {
+    await initDatabase();
+    dbInitialized = true;
+    console.log('[Logger] 数据库日志系统初始化成功');
+  } catch (error) {
+    console.error('[Logger] 数据库初始化失败，将仅使用文件日志:', error);
+    dbInitialized = false;
+  }
+}
 
 // 内存队列（批量写入）
 const logQueues: { [key: string]: string[] } = {};
@@ -246,6 +271,18 @@ function updateUserProfile(userName: string, data: any, date: string): void {
     case 'session_end':
       profile.totalSessions++;
       break;
+      
+    case 'access':
+      // access 类型日志也统计为一次查询/访问
+      profile.totalQueries++;
+      todayStat.queries++;
+      // 如果有 action 信息，记录到 tools 中用于分析用户行为
+      if (data.action) {
+        const actionKey = `action:${data.action}`;
+        const count = todayStat.tools.get(actionKey) || 0;
+        todayStat.tools.set(actionKey, count + 1);
+      }
+      break;
   }
   
   profile.lastActive = date;
@@ -348,7 +385,7 @@ export function logRequest(data: {
     session.queries.push(data.rawInput);
   }
   
-  asyncWriteLog('requests', {
+  const logData = {
     timestamp: new Date().toISOString(),
     type: 'request',
     session_id: data.sessionId,
@@ -359,7 +396,27 @@ export function logRequest(data: {
       routed_skills: data.routedSkills || [],
       confidence: data.confidence || 0
     }
-  }, userName);
+  };
+  
+  // 写入文件日志
+  asyncWriteLog('requests', logData, userName);
+  
+  // 写入数据库（双写）
+  if (dbInitialized) {
+    dbLogRequest({
+      timestamp: logData.timestamp,
+      session_id: data.sessionId,
+      user_name: userName,
+      client_ip: data.clientIp,
+      raw_input: data.rawInput,
+      detected_keywords: data.detectedKeywords,
+      routed_skills: data.routedSkills,
+      confidence: data.confidence
+    }).catch(err => {
+      // 数据库写入失败不影响文件日志
+      console.error('[Logger] 数据库写入失败:', err);
+    });
+  }
 }
 
 /**
@@ -382,7 +439,7 @@ export function logSkillInvocation(data: {
     session.tools.set(data.toolName, toolCount + 1);
   }
   
-  asyncWriteLog('skills', {
+  const logData = {
     timestamp: new Date().toISOString(),
     type: 'skill_invocation',
     session_id: data.sessionId,
@@ -391,7 +448,26 @@ export function logSkillInvocation(data: {
     success: data.success,
     response_time_ms: data.responseTimeMs,
     content_length: data.contentLength || 0
-  }, userName);
+  };
+  
+  // 写入文件日志
+  asyncWriteLog('skills', logData, userName);
+  
+  // 写入数据库（双写）
+  if (dbInitialized) {
+    dbLogSkill({
+      timestamp: logData.timestamp,
+      session_id: data.sessionId,
+      user_name: userName,
+      skill_path: data.skillPath,
+      tool_name: data.toolName,
+      success: data.success,
+      response_time_ms: data.responseTimeMs,
+      content_length: data.contentLength
+    }).catch(err => {
+      console.error('[Logger] 数据库写入失败:', err);
+    });
+  }
 }
 
 /**
@@ -442,7 +518,7 @@ export function logError(data: {
     session.errors++;
   }
   
-  asyncWriteLog('errors', {
+  const logData = {
     timestamp: new Date().toISOString(),
     type: 'error',
     session_id: data.sessionId,
@@ -452,7 +528,27 @@ export function logError(data: {
     context: data.context,
     recoverable: data.recoverable,
     user_impact: data.userImpact
-  }, userName);
+  };
+  
+  // 写入文件日志
+  asyncWriteLog('errors', logData, userName);
+  
+  // 写入数据库（双写）
+  if (dbInitialized) {
+    dbLogError({
+      timestamp: logData.timestamp,
+      session_id: data.sessionId,
+      user_name: userName,
+      error_category: data.errorCategory,
+      severity: data.severity,
+      error_message: data.errorMessage,
+      context: data.context,
+      recoverable: data.recoverable,
+      user_impact: data.userImpact
+    }).catch(err => {
+      console.error('[Logger] 数据库写入失败:', err);
+    });
+  }
 }
 
 /**
@@ -469,11 +565,30 @@ export function logAccess(data: {
 }): void {
   const userName = data.userName || 'anonymous';
   
-  asyncWriteLog('access', {
+  const logData = {
     timestamp: new Date().toISOString(),
     type: 'access',
     ...data
-  }, userName);
+  };
+  
+  // 写入文件日志
+  asyncWriteLog('access', logData, userName);
+  
+  // 写入数据库（双写）
+  if (dbInitialized) {
+    dbLogAccess({
+      timestamp: logData.timestamp,
+      session_id: data.sessionId,
+      user_name: userName,
+      ip_address: data.ip,
+      action: data.action,
+      user_agent: data.userAgent,
+      response_time_ms: data.responseTimeMs,
+      details: data
+    }).catch(err => {
+      console.error('[Logger] 数据库写入失败:', err);
+    });
+  }
 }
 
 /**

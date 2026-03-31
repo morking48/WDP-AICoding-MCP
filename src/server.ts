@@ -14,7 +14,8 @@ import {
   logSkillInvocation, 
   logError, 
   logSessionEnd,
-  cleanupOldLogs 
+  cleanupOldLogs,
+  initLogger
 } from './utils/logger';
 import {
   initTokenManager,
@@ -101,12 +102,12 @@ const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
  * 日志记录 - 使用高级日志系统（增强版）
  */
 const logAccess = (req: Request, action: string, data: any = {}) => {
-  // 获取或创建会话ID
-  const sessionId = getOrCreateSessionId(req.ip || 'unknown');
-  
   // 获取用户信息
   const userInfo = (req as any).userInfo;
   const userName = userInfo?.name || 'anonymous';
+  
+  // 获取或创建会话ID（传入正确的用户名）
+  const sessionId = getOrCreateSessionId(req.ip || 'unknown', userName);
   
   // 记录开始时间（用于计算响应时间）
   const startTime = Date.now();
@@ -170,6 +171,7 @@ const logAccess = (req: Request, action: string, data: any = {}) => {
   // 增强版访问日志
   const logEntry = {
     timestamp: new Date().toISOString(),
+    type: 'access',
     ip: req.ip,
     action,
     userAgent: req.headers['user-agent'],
@@ -179,8 +181,11 @@ const logAccess = (req: Request, action: string, data: any = {}) => {
     ...data
   };
   
-  const logLine = JSON.stringify(logEntry) + '\n';
-  fs.appendFileSync(LOGS_PATH, logLine);
+  // 使用导入的 logAccess 函数（内部已实现双写）
+  const { logAccess: logAccessFunc } = require('./utils/logger');
+  logAccessFunc(logEntry);
+  
+  // 同时保留控制台输出
   console.log(`[LOG] ${action}:`, JSON.stringify(logEntry, null, 2));
 };
 
@@ -920,6 +925,13 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 
 // 初始化Token管理器
 initTokenManager();
+
+// 初始化日志系统（包括数据库）
+initLogger().then(() => {
+  console.log('[Server] 日志系统初始化完成');
+}).catch(err => {
+  console.error('[Server] 日志系统初始化失败:', err);
+});
 
 // 启动服务器
 server.listen(Number(PORT), HOST, () => {
