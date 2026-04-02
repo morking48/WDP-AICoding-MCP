@@ -354,6 +354,42 @@ function inferMissingParams(query: string): string[] {
 
 function buildClarifyingQuestions(query: string, matchedRoutes: RouteMatch[], missingParams: string[]): string[] {
   const questions: string[] = [];
+  const normalizedQuery = normalizeText(query);
+  const mentionsObjectOperation = [
+    '高亮',
+    '构件',
+    '房间',
+    '定位',
+    '飞到',
+    '聚焦',
+    '实体',
+    '模型',
+    'poi',
+    'window',
+    '粒子',
+    '特效',
+    'path',
+    'gis要素',
+    'feature',
+  ].some((keyword) => normalizedQuery.includes(normalizeText(keyword)));
+  const mentionsObjectCategory = [
+    'hierarchy',
+    'path',
+    'poi',
+    'window',
+    'particle',
+    'effects',
+    'bim构件',
+    'gis要素',
+  ].some((keyword) => normalizedQuery.includes(normalizeText(keyword)));
+  const mentionsObjectId = [
+    'eid',
+    'entityname',
+    'customid',
+    'seedid',
+    'nodeid',
+    'featureid',
+  ].some((keyword) => normalizedQuery.includes(keyword));
 
   if (missingParams.includes('url')) {
     questions.push('请提供 WDP 服务 URL，不能使用 YOUR_URL 这类占位符。');
@@ -362,10 +398,22 @@ function buildClarifyingQuestions(query: string, matchedRoutes: RouteMatch[], mi
     questions.push('请提供与该环境匹配的 Order 或验证口令。');
   }
   if (missingParams.includes('target')) {
-    questions.push('请补充目标实体信息，例如 eid、nodeId、构件名称或房间名称。');
+    questions.push(
+      '请先明确目标对象信息：至少补充 eid、entityName、customId、seedId、nodeId 或 featureId 中的一种有效标识。',
+    );
   }
   if (missingParams.includes('data')) {
     questions.push('请补充业务数据，例如坐标、GeoJSON、点位列表或窗口内容。');
+  }
+  if (mentionsObjectOperation && !mentionsObjectCategory) {
+    questions.push(
+      '当前涉及对象操作，请先明确对象类别：Hierarchy、Path、Poi、Window、Particle、Effects、BIM构件 或 GIS要素。',
+    );
+  }
+  if (mentionsObjectOperation && !mentionsObjectId) {
+    questions.push(
+      '如果你现在还没有准确对象 Id，请说明准备通过创建返回值、屏幕拾取、事件回调、实体查询、BIM 查询还是 GIS 查询来获取。',
+    );
   }
 
   if (matchedRoutes.length === 0) {
@@ -374,7 +422,7 @@ function buildClarifyingQuestions(query: string, matchedRoutes: RouteMatch[], mi
     questions.push(`当前同时命中了 ${matchedRoutes[0].label} 和 ${matchedRoutes[1].label}，请确认主需求偏向哪一个。`);
   }
 
-  if (!normalizeText(query).includes('从零') && !normalizeText(query).includes('现有代码')) {
+  if (!normalizedQuery.includes('从零') && !normalizedQuery.includes('现有代码')) {
     questions.push('这是在现有页面上接功能，还是需要从零搭建一个新的 WDP 页面？');
   }
 
