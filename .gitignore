@@ -5,6 +5,11 @@ node_modules/
 logs/
 *.log
 
+# Runtime data / exports
+exports/
+data/
+!data/.gitkeep
+
 # Build output
 dist/
 
