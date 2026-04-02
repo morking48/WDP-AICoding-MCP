@@ -26,7 +26,7 @@
 
 将 `wdp-mcp-proxy.zip` 解压到任意位置，例如：
 ```
-C:\Users\同事用户名\Documents\wdp-mcp-proxy\
+C:\Users\用户名\Documents\wdp-mcp-proxy\
 ```
 
 ### 2. 在 Cline 中配置
@@ -37,7 +37,7 @@ C:\Users\同事用户名\Documents\wdp-mcp-proxy\
     "wdp-knowledge-proxy": {
       "command": "node",
       "args": [
-        "C:/Users/同事用户名/Documents/wdp-remote-client/mcp-proxy-client.js"
+        "C:/Users/用户名/Documents/wdp-remote-client/mcp-proxy-client.js"
       ],
       "env": {
         "WDP_SERVER_URL": "http://10.66.9.105:3000",
