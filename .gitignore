@@ -26,3 +26,6 @@ Thumbs.db
 
 # Token data (sensitive)
 config/tokens.json
+
+# Archives
+*.zip
