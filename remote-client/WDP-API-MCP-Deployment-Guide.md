@@ -181,7 +181,7 @@ C:\Users\用户名\Documents\wdp-mcp-proxy\
 配置完成后，在 IDE 的 AI 聊天中测试：
 
 ```
-帮我写一个显示3D大楼的页面
+帮我访问下WDP相关技能库内容有什么
 ```
 
 AI 会自动调用 `start_wdp_workflow` 工具，获取工作流指导。
