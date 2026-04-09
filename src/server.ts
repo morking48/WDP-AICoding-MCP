@@ -40,6 +40,10 @@ import {
   buildWorkflowResponse,
   listKnowledgeEntries,
   readKnowledgeFile,
+  enforceRoutingCheck,
+  enforceOfficialDocsRead,
+  enforceContextMemoryEnabled,
+  enforceObjectIdsValid,
 } from './utils/wdpKnowledge';
 
 // 配置
@@ -321,8 +325,26 @@ app.get('/api/skills', authMiddleware, (req: Request, res: Response) => {
 async function handleMcpToolCall(name: string, args: any, req: Request): Promise<any> {
   switch (name) {
     case 'start_wdp_workflow': {
+      // 硬编码检查：必须有 user_requirement
       if (!args || typeof args.user_requirement !== 'string') {
-        throw new Error('缺少 user_requirement 参数');
+        return {
+          content: [{ 
+            type: 'text', 
+            text: '❌ 错误：缺少 user_requirement 参数\n\n请提供用户原始需求描述。' 
+          }],
+          isError: true
+        };
+      }
+
+      // 硬编码检查：必须有 projectPath
+      if (!args.projectPath || typeof args.projectPath !== 'string') {
+        return {
+          content: [{ 
+            type: 'text', 
+            text: '❌ 错误：缺少 projectPath 参数\n\n【必需】请在输入中指定工程路径，用于创建本地缓存。\n\n示例：\n调用start_wdp_workflow：了解WDP知识库机制\n\nprojectPath: D:/Projects/你的工程目录' 
+          }],
+          isError: true
+        };
       }
 
       const result = buildWorkflowResponse(args.user_requirement);
@@ -375,8 +397,24 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
         };
       }
       
+      // 生成结构化摘要和文件哈希
+      const { generateDigest, computeFileHash, digestToText } = await import('./utils/wdpKnowledge');
+      const digest = generateDigest(content, args.path);
+      const fileHash = computeFileHash(content);
+      
+      // 返回完整内容 + 摘要 + 哈希
       return {
-        content: [{ type: 'text', text: content }]
+        content: [{ 
+          type: 'text', 
+          text: JSON.stringify({
+            content: content,           // 完整内容（首次使用）
+            digest: digest,             // 结构化摘要
+            digestText: digestToText(digest),  // 摘要文本格式
+            fileHash: fileHash,         // 文件哈希（用于更新检测）
+            path: args.path,
+            timestamp: new Date().toISOString()
+          }, null, 2)
+        }]
       };
     }
 
@@ -400,6 +438,67 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
       
       return {
         content: [{ type: 'text', text: `服务状态: ${exists ? '正常' : '知识库路径不存在'}\n知识库路径: ${KNOWLEDGE_BASE_PATH}\n时间: ${new Date().toISOString()}` }]
+      };
+    }
+
+    // ============ 约束检查工具 ============
+    case 'enforce_routing_check': {
+      if (!args || !args.workflow_result || !Array.isArray(args.skills_read)) {
+        return {
+          content: [{ type: 'text', text: '错误: 缺少必要参数 workflow_result 或 skills_read' }],
+          isError: true
+        };
+      }
+
+      const result = enforceRoutingCheck(args.workflow_result, args.skills_read);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        isError: !result.passed
+      };
+    }
+
+    case 'enforce_official_docs_read': {
+      if (!args || !Array.isArray(args.required_files) || !Array.isArray(args.files_read)) {
+        return {
+          content: [{ type: 'text', text: '错误: 缺少必要参数 required_files 或 files_read' }],
+          isError: true
+        };
+      }
+
+      const result = enforceOfficialDocsRead(args.required_files, args.files_read);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        isError: !result.passed
+      };
+    }
+
+    case 'enforce_context_memory_check': {
+      if (typeof args?.dialogue_rounds !== 'number' || typeof args?.skills_count !== 'number' || typeof args?.memory_enabled !== 'boolean') {
+        return {
+          content: [{ type: 'text', text: '错误: 缺少必要参数 dialogue_rounds, skills_count 或 memory_enabled' }],
+          isError: true
+        };
+      }
+
+      const result = enforceContextMemoryEnabled(args.dialogue_rounds, args.skills_count, args.memory_enabled);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        isError: !result.passed
+      };
+    }
+
+    case 'enforce_object_ids_valid': {
+      if (!args || !Array.isArray(args.object_ids)) {
+        return {
+          content: [{ type: 'text', text: '错误: 缺少必要参数 object_ids' }],
+          isError: true
+        };
+      }
+
+      const result = enforceObjectIdsValid(args.object_ids, args.allow_mock);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        isError: !result.passed
       };
     }
 

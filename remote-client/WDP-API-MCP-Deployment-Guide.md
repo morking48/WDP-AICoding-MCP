@@ -1,14 +1,15 @@
-# WDP MCP 代理客户端 - 零更新方案
+# WDP MCP 代理客户端
 
 ## 简介
 
 这是**智能代理模式**的客户端，只负责桥接 IDE/AI 助手和远程服务器。
 
 **核心优势**：
-- ✅ **客户端永不更新** - 所有业务逻辑在服务器端
-- ✅ **极简代码** - 仅 80 行，几乎不需要维护
-- ✅ **自动同步** - 服务器更新后，客户端自动获取最新功能
-- ✅ **缓存优化** - 工具定义缓存 60 秒，减少网络请求
+- **客户端无需更新** - 所有业务逻辑在服务器端
+- **极简代码** - 仅 80 行，几乎不需要维护
+- **自动同步** - 服务器更新后，客户端自动获取最新功能
+- **缓存优化** - 工具定义缓存 60 秒，减少网络请求
+- **约束检查** - 内置 4 个强制检查点，确保 WDP 开发规范执行
 
 ---
 
@@ -55,12 +56,20 @@ C:\Users\用户名\Documents\wdp-mcp-proxy\
         "query_knowledge",
         "get_skill_content",
         "list_skills",
-        "check_health"
+        "check_health",
+        "enforce_routing_check",
+        "enforce_official_docs_read",
+        "enforce_context_memory_check",
+        "enforce_object_ids_valid"
       ]
     }
   }
 }
 ```
+
+**环境变量说明**：
+- `WDP_SERVER_URL`：MCP服务器地址
+- `WDP_KNOWLEDGE_TOKEN`：访问令牌（向管理员申请）
 
 #### 2.2 Cursor
 
@@ -232,6 +241,31 @@ AI 会自动调用 `start_wdp_workflow` 工具，获取工作流指导。
 
 ---
 
+## 约束检查工具
+
+MCP 服务内置 4 个强制约束检查工具，确保 WDP 开发规范执行：
+
+| 工具名 | 用途 | 触发时机 |
+|:---|:---|:---|
+| `enforce_routing_check` | 验证是否已读取必要 skill | 编码前 |
+| `enforce_official_docs_read` | 验证 official 真值文档已读取 | 编码前 |
+| `enforce_context_memory_check` | 验证长任务已启用状态管理 | 对话>3轮或多 skill 时 |
+| `enforce_object_ids_valid` | 验证对象 Id 不是假值 | 涉及对象操作时 |
+
+### 使用方式
+
+1. 调用 `start_wdp_workflow` 获取路由和 `mandatoryCheckpoints`
+2. 编码前依次调用约束检查工具
+3. **任一检查返回 `passed: false`，将阻止编码继续**
+
+### 配置说明
+
+上述工具已加入 `autoApprove` 列表，会自动执行：
+- 检查通过 → 继续编码
+- 检查失败 → 返回错误，AI 知道"此路不通"
+
+---
+
 ## 服务器端点
 
 代理客户端会访问服务器的以下端点：
@@ -304,22 +338,6 @@ AI 会自动调用 `start_wdp_workflow` 工具，获取工作流指导。
 **解决**：
 - 等待 60 秒缓存过期
 - 或重启 IDE/AI 助手
-
----
-
-## 更新历史
-
-### v1.1.0 (2026-04-03)
-- 扩展多 IDE 支持文档
-- 新增 Cursor、Windsurf、Claude Desktop 配置指南
-- 更新描述，从仅支持 Cline 扩展到通用 IDE/AI 助手
-- 添加各 IDE 的配置文件路径和配置步骤
-
-### v1.0.0 (2026-03-26)
-- 初始版本
-- 实现智能代理模式
-- 支持工具定义动态获取
-- 60秒缓存机制
 
 ---
 

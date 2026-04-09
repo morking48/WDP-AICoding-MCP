@@ -29,3 +29,8 @@ config/tokens.json
 
 # Archives
 *.zip
+
+# Local development / LAN testing
+start-server.bat
+remote-client/WDP-API-MCP-Deployment-Guide-local.md
+remote-client/WDP-API-MCP-User-Manual-enforced.md

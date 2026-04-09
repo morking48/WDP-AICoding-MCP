@@ -1,0 +1,12 @@
+{
+  "version": "1.0.0",
+  "defaultCacheLocation": "project",
+  "cacheExpiryDays": 7,
+  "maxCacheSizeMB": 10,
+  "skillCacheFile": "skill-digest.json",
+  "sessionCacheFile": "session-state.json",
+  "officialDocsIndexFile": "official-docs-index.json",
+  "cacheDirName": ".wdp-cache",
+  "tempCachePrefix": "temp-",
+  "updateCheckInterval": 300000
+}

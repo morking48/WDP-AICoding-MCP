@@ -1,5 +1,8 @@
 import fs from 'fs';
 import path from 'path';
+import { generateDigest, computeFileHash, SkillDigest, DigestWithHash, digestToText } from './digestGenerator';
+
+export { generateDigest, computeFileHash, SkillDigest, DigestWithHash, digestToText };
 
 export type SearchResultKind = 'skill' | 'official' | 'resource' | 'template' | 'file';
 export type WorkflowMode = 'ready' | 'clarify' | 'blocked';
@@ -21,6 +24,14 @@ export interface RouteMatch {
   matchedKeywords: string[];
 }
 
+export interface MandatoryCheckpoint {
+  name: string;
+  tool: string;
+  trigger: string;
+  blockOnFailure: boolean;
+  params?: Record<string, unknown>;
+}
+
 export interface WorkflowResponse {
   success: true;
   title: string;
@@ -39,6 +50,8 @@ export interface WorkflowResponse {
   importantNotes: string[];
   nextAction: string;
   timestamp: string;
+  mandatoryCheckpoints: MandatoryCheckpoint[];
+  constraintViolationMessage: string;
 }
 
 export interface QueryResponse {
@@ -649,6 +662,37 @@ export function buildWorkflowResponse(userRequirement: string): WorkflowResponse
   const clarifyingQuestions = buildClarifyingQuestions(userRequirement, matchedRoutes, missingRequiredParams);
   const confidence = calculateConfidence(matchedRoutes);
   const mode: WorkflowMode = missingRequiredParams.length > 0 || confidence < 0.72 ? 'clarify' : 'ready';
+  const isLongTask = matchedRoutes.length > 1 || requiredOfficialFiles.length > 1;
+
+  // 构建强制检查点
+  const mandatoryCheckpoints: MandatoryCheckpoint[] = [
+    {
+      name: 'routing_check',
+      tool: 'enforce_routing_check',
+      trigger: '编码前',
+      blockOnFailure: true,
+    },
+    {
+      name: 'official_docs_check',
+      tool: 'enforce_official_docs_read',
+      trigger: '编码前',
+      blockOnFailure: true,
+      params: { required_files: requiredOfficialFiles },
+    },
+    {
+      name: 'context_memory_check',
+      tool: 'enforce_context_memory_check',
+      trigger: isLongTask ? '长任务编码前（必须）' : '对话>3轮时',
+      blockOnFailure: true,
+      params: { skills_count: matchedRoutes.length },
+    },
+    {
+      name: 'object_ids_check',
+      tool: 'enforce_object_ids_valid',
+      trigger: '涉及对象操作时',
+      blockOnFailure: true,
+    },
+  ];
 
   return {
     success: true,
@@ -665,8 +709,8 @@ export function buildWorkflowResponse(userRequirement: string): WorkflowResponse
     canGenerateCode: mode === 'ready' && requiredOfficialFiles.length > 0,
     guidance:
       mode === 'ready'
-        ? '已命中 WDP 路由，请继续读取对应 official 文档后再生成代码。'
-        : '当前仍需补充信息或读取 official 文档。未确认到真值前，不要自行编排 WDP 方法名和参数名。',
+        ? `已命中 WDP 路由。【关键】编码前必须依次调用 mandatoryCheckpoints 中的检查工具。如果检查未通过，禁止生成代码。`
+        : `当前仍需补充信息或读取 official 文档。未确认到真值前，不要自行编排 WDP 方法名和参数名。`,
     workflowSteps: [
       {
         step: 1,
@@ -738,6 +782,8 @@ export function buildWorkflowResponse(userRequirement: string): WorkflowResponse
         ? '请先读取命中的 official 文档，再生成代码。'
         : '请先向用户补充缺失信息，或缩小到明确的 WDP 技能域后再继续。',
     timestamp: new Date().toISOString(),
+    mandatoryCheckpoints,
+    constraintViolationMessage: '约束检查未通过。请先完成 mandatoryCheckpoints 中的所有检查，再继续生成代码。',
   };
 }
 
@@ -822,21 +868,147 @@ export function buildKnowledgeQueryResponse(
   };
 }
 
+// ============ 约束检查函数 ============
+
+export interface ConstraintCheckResult {
+  passed: boolean;
+  block: boolean;
+  message?: string;
+  action?: string;
+  missingItems?: string[];
+}
+
+/**
+ * 强制检查：路由确认
+ * 验证是否已通过 start_wdp_workflow 获取路由并读取必要 skill
+ */
+export function enforceRoutingCheck(
+  workflowResult: WorkflowResponse,
+  skillsRead: string[]
+): ConstraintCheckResult {
+  const requiredSkills = workflowResult.matchedSkills || [];
+  const missingSkills = requiredSkills.filter(
+    (skill) => !skillsRead.some((read) => read.includes(skill.replace('/SKILL.md', '')))
+  );
+
+  if (missingSkills.length > 0) {
+    return {
+      passed: false,
+      block: true,
+      message: `未读取必要 skill: ${missingSkills.join(', ')}`,
+      action: `请先调用 get_skill_content 读取: ${missingSkills.join(', ')}`,
+      missingItems: missingSkills,
+    };
+  }
+
+  return { passed: true, block: false };
+}
+
+/**
+ * 强制检查：official 文档读取
+ * 验证 requiredOfficialFiles 是否已读取
+ */
+export function enforceOfficialDocsRead(
+  requiredFiles: string[],
+  filesRead: string[]
+): ConstraintCheckResult {
+  const missingFiles = requiredFiles.filter(
+    (file) => !filesRead.some((read) => read.includes(file))
+  );
+
+  if (missingFiles.length > 0) {
+    return {
+      passed: false,
+      block: true,
+      message: `未读取 official 真值文档: ${missingFiles.join(', ')}`,
+      action: `请先调用 get_skill_content 读取 official 文档，禁止基于经验猜测 API 方法名和参数名`,
+      missingItems: missingFiles,
+    };
+  }
+
+  return { passed: true, block: false };
+}
+
+/**
+ * 强制检查：context-memory 启用
+ * 长任务必须启用状态管理
+ */
+export function enforceContextMemoryEnabled(
+  dialogueRounds: number,
+  skillsCount: number,
+  memoryEnabled: boolean
+): ConstraintCheckResult {
+  const isLongTask = dialogueRounds > 3 || skillsCount > 1;
+
+  if (isLongTask && !memoryEnabled) {
+    return {
+      passed: false,
+      block: true,
+      message: `长流程任务必须启用 wdp-context-memory 状态管理`,
+      action: `请先调用 get_skill_content 读取 wdp-context-memory/SKILL.md 并启用状态管理`,
+      missingItems: ['wdp-context-memory'],
+    };
+  }
+
+  return { passed: true, block: false };
+}
+
+/**
+ * 强制检查：对象 Id 有效性
+ * 验证代码中使用的对象 Id 不是假值
+ */
+export function enforceObjectIdsValid(
+  objectIds: Array<{ name: string; value: string; source?: string }>,
+  allowMock: boolean = false
+): ConstraintCheckResult {
+  const invalidIds = objectIds.filter((id) => {
+    const val = id.value;
+    // 检查假值模式
+    const isMockValue =
+      val.includes('YOUR_') ||
+      val.includes('TODO') ||
+      val.includes('FIXME') ||
+      val.includes('placeholder') ||
+      val.includes('xxx') ||
+      val.includes('123') ||
+      val.length < 3;
+    return isMockValue;
+  });
+
+  if (invalidIds.length > 0 && !allowMock) {
+    return {
+      passed: false,
+      block: true,
+      message: `发现无效对象 Id: ${invalidIds.map((i) => i.name).join(', ')}`,
+      action: `请通过创建返回值、屏幕拾取、事件回调、实体查询、BIM 查询或 GIS 查询获取真实 Id，禁止使用假值`,
+      missingItems: invalidIds.map((i) => i.name),
+    };
+  }
+
+  return { passed: true, block: false };
+}
+
 export const MCP_TOOL_DEFINITIONS: MpcToolDefinition[] = [
   {
     name: 'start_wdp_workflow',
     description:
       '【WDP 开发入口】所有 WDP、数字孪生、3D 可视化、BIM、GIS、场景交互相关需求都必须先调用此工具。' +
-      '它负责路由、参数门禁和 official 文档定位。若信息不充分，会返回需要追问的问题；若未读取 official 真值文档，禁止自行编排 WDP 方法名或参数名。',
+      '它负责路由、参数门禁和 official 文档定位。若信息不充分，会返回需要追问的问题；若未读取 official 真值文档，禁止自行编排 WDP 方法名或参数名。' +
+      '【重要】返回结果中包含 mandatoryCheckpoints，编码前必须依次调用这些检查工具。' +
+      '【必需】必须提供 projectPath 参数指定工程路径，用于创建本地缓存。',
     inputSchema: {
       type: 'object',
       properties: {
         user_requirement: {
           type: 'string',
-          description: '用户原始需求描述，例如“帮我写一个显示 3D 大楼的页面”。',
+          description: '用户原始需求描述，例如"帮我写一个显示 3D 大楼的页面"。',
+        },
+        projectPath: {
+          type: 'string',
+          description: '【必需】工程路径，用于创建本地缓存。例如：D:/Projects/智慧园区',
         },
       },
-      required: ['user_requirement'],
+      required: ['user_requirement', 'projectPath'],
     },
   },
   {
@@ -895,6 +1067,102 @@ export const MCP_TOOL_DEFINITIONS: MpcToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {},
+    },
+  },
+  // ============ 约束检查工具 ============
+  {
+    name: 'enforce_routing_check',
+    description:
+      '【强制检查点 - 编码前必须调用】验证是否已读取 workflow 返回的所有必要 skill。' +
+      '如果未通过，返回 isError=true，必须停止编码并先读取缺失的 skill。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workflow_result: {
+          type: 'object',
+          description: 'start_wdp_workflow 返回的完整结果对象',
+        },
+        skills_read: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '声称已读取的 skill 路径列表',
+        },
+      },
+      required: ['workflow_result', 'skills_read'],
+    },
+  },
+  {
+    name: 'enforce_official_docs_read',
+    description:
+      '【强制检查点 - 编码前必须调用】验证 requiredOfficialFiles 是否已全部读取。' +
+      '如果未通过，返回 isError=true，必须停止编码并先读取 official 真值文档。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        required_files: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'workflow 返回的 requiredOfficialFiles 列表',
+        },
+        files_read: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '声称已读取的 official 文件路径列表',
+        },
+      },
+      required: ['required_files', 'files_read'],
+    },
+  },
+  {
+    name: 'enforce_context_memory_check',
+    description:
+      '【强制检查点 - 长任务编码前必须调用】验证是否已启用 context-memory 状态管理。' +
+      '如果对话>3轮或涉及多个 skill 但未启用，返回 isError=true。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dialogue_rounds: {
+          type: 'number',
+          description: '当前对话轮数',
+        },
+        skills_count: {
+          type: 'number',
+          description: '涉及的 skill 数量',
+        },
+        memory_enabled: {
+          type: 'boolean',
+          description: '是否已启用 context-memory',
+        },
+      },
+      required: ['dialogue_rounds', 'skills_count', 'memory_enabled'],
+    },
+  },
+  {
+    name: 'enforce_object_ids_valid',
+    description:
+      '【强制检查点 - 编码前必须调用】验证代码中使用的对象 Id 不是假值（如 YOUR_xxx, TODO, 123 等）。' +
+      '如果发现假值且 allowMock=false，返回 isError=true。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        object_ids: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              value: { type: 'string' },
+              source: { type: 'string' },
+            },
+          },
+          description: '要检查的对象 Id 列表，每个包含名称、值和来源',
+        },
+        allow_mock: {
+          type: 'boolean',
+          description: '是否允许使用 mock 值（仅开发阶段）',
+        },
+      },
+      required: ['object_ids'],
     },
   },
 ];

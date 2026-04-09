@@ -43,11 +43,38 @@
 
 ## 场景 1：加载知识库
 
-**用途**：新对话开始，了解 WDP 知识库机制
+**用途**：新对话开始，了解 WDP 知识库机制，指定当前任务的缓存路径
 
 **输入范式**：
 ```
 调用start_wdp_workflow：了解WDP知识库机制
+
+projectPath: 【你的工程路径】
+```
+
+**示例**：
+```
+调用start_wdp_workflow：了解WDP知识库机制
+
+projectPath: D:/Projects/智慧园区
+```
+
+**说明**：
+- `projectPath` 是**必需参数**，用于确定本地缓存位置
+- 在该目录下自动创建 `.wdp-cache/` 文件夹
+- 不同工程使用不同缓存，避免混淆
+- **如不填写会报错并提示**
+
+**错误提示**：
+```
+❌ 错误：缺少 projectPath 参数
+
+【必需】请在输入中指定工程路径，用于创建本地缓存。
+
+示例：
+调用start_wdp_workflow：了解WDP知识库机制
+
+projectPath: D:/Projects/你的工程目录
 ```
 
 ---
@@ -59,11 +86,15 @@
 **输入范式**：
 ```
 调用start_wdp_workflow：解析【需求文件路径】
+
+工程路径：【你的工程路径】
 ```
 
 **示例**：
 ```
 调用start_wdp_workflow：解析D:/Projects/智慧园区/需求文档.md
+
+工程路径：D:/Projects/智慧园区
 ```
 
 ---
@@ -76,6 +107,7 @@
 ```
 调用start_wdp_workflow：【需求描述】
 
+工程路径：【你的工程路径】
 对象类别：【Hierarchy/Path/Poi/Window/Particle/Effects/BIM构件/GIS要素/暂无】
 对象 Id：【eid/entityName/customId/seedId/nodeId/featureId/暂无】
 坐标参数：【有则填，无则写"暂无"】
@@ -85,6 +117,7 @@
 ```
 调用start_wdp_workflow：实现BIM模型高亮和房间标注功能
 
+工程路径：D:/Projects/智慧园区
 对象类别：BIM构件
 对象 Id：暂无
 坐标参数：暂无
@@ -98,9 +131,9 @@
 
 **输入范式**：
 ```
-调用检查点，读取【需求说明文档】，然后编码：【一句话描述目标】
+调用检查点，然后编码：【一句话描述目标】
 
-工程路径：【路径】
+工程路径：【你的工程路径】
 对象类别：【Hierarchy/Path/Poi/Window/Particle/Effects/BIM构件/GIS要素/不涉及】
 对象 Id：【eid/entityName/customId/seedId/nodeId/featureId/不涉及】
 ```
@@ -128,6 +161,7 @@
 ```
 调用start_wdp_workflow排查：【问题描述】
 
+工程路径：【你的工程路径】
 对象类别：【Hierarchy/Path/Poi/Window/Particle/Effects/BIM构件/GIS要素/不涉及】
 对象 Id：【eid/entityName/customId/seedId/nodeId/featureId/不涉及】
 ```
@@ -136,6 +170,7 @@
 ```
 调用start_wdp_workflow排查：BIM高亮不生效，点击模型无反应
 
+工程路径：D:/Projects/智慧园区
 对象类别：BIM构件
 对象 Id：nodeId
 ```
@@ -166,6 +201,7 @@
 ```
 调用检查点，然后回到主线：【一句话描述】
 
+工程路径：【你的工程路径】
 对象类别：【Hierarchy/Path/Poi/Window/Particle/Effects/BIM构件/GIS要素/不涉及】
 对象 Id：【eid/entityName/customId/seedId/nodeId/featureId/不涉及】
 ```
@@ -174,6 +210,7 @@
 ```
 调用检查点，然后回到主线：实现GIS地图底图加载
 
+工程路径：D:/Projects/智慧园区
 对象类别：GIS要素
 对象 Id：不涉及
 ```
@@ -195,6 +232,12 @@
 ---
 
 ## 参数说明
+
+### 工程路径
+- 用于确定本地缓存位置
+- 在该目录下自动创建 `.wdp-cache/` 文件夹
+- 不同工程使用不同缓存，避免混淆
+- 示例：`D:/Projects/智慧园区`
 
 ### 对象类别
 - `Hierarchy`：普通模型或层级实体
