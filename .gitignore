@@ -31,7 +31,7 @@ config/tokens.json
 *.zip
 
 # Local development / LAN testing
-start-server.bat
+start-server.ba
 
 # Documentation files
 LOG_ANALYSIS_GUIDE.md
@@ -39,3 +39,10 @@ CHANGELOG.md
 
 # Scripts
 generate-token.bat
+
+# Remote data folders
+remote-data/
+remote-logs/
+
+# Remote client (local only)
+remote-client/
