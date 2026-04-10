@@ -45,6 +45,10 @@ import {
   enforceContextMemoryEnabled,
   enforceObjectIdsValid,
 } from './utils/wdpKnowledge';
+import {
+  logConversation,
+  detectScene
+} from './utils/logger';
 
 // 配置
 const PORT = process.env.PORT || 3000;
@@ -347,9 +351,116 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
         };
       }
 
-      const result = buildWorkflowResponse(args.user_requirement);
+      // ====== 硬编码执行工作流 ======
+      const sessionId = getOrCreateSessionId(req.ip || 'unknown', (req as any).userInfo?.name);
+      const userName = (req as any).userInfo?.name;
+      const userRequirement = args.user_requirement;
+      const projectPath = args.projectPath;
+      
+      console.error(`[Workflow] 开始执行工作流: ${userRequirement.substring(0, 50)}...`);
+      
+      // 1. 路由匹配（本地计算）
+      const workflowResult = buildWorkflowResponse(userRequirement);
+      const { scene, isScene5 } = detectScene(userRequirement);
+      
+      // 2. 硬编码读取必要技能（按顺序）
+      const skillsToRead = [
+        'wdp-entry-agent/SKILL.md',
+        'wdp-intent-orchestrator/SKILL.md',
+        ...workflowResult.matchedSkills
+      ];
+      
+      const skillContents: any[] = [];
+      const backendCalls: any[] = [];
+      
+      for (const skillPath of skillsToRead) {
+        try {
+          const content = readKnowledgeFile(KNOWLEDGE_BASE_PATH, skillPath);
+          if (content) {
+            skillContents.push({ path: skillPath, content: content.substring(0, 1000) + '...' });
+            backendCalls.push({ type: 'skill', path: skillPath, status: 'success' });
+            console.error(`[Workflow] 已读取: ${skillPath}`);
+          }
+        } catch (error) {
+          backendCalls.push({ type: 'skill', path: skillPath, status: 'error', error: String(error) });
+        }
+      }
+      
+      // 3. 硬编码读取官方文档
+      const officialContents: any[] = [];
+      for (const officialPath of workflowResult.requiredOfficialFiles) {
+        try {
+          const content = readKnowledgeFile(KNOWLEDGE_BASE_PATH, officialPath);
+          if (content) {
+            officialContents.push({ path: officialPath, content: content.substring(0, 1000) + '...' });
+            backendCalls.push({ type: 'official', path: officialPath, status: 'success' });
+            console.error(`[Workflow] 已读取: ${officialPath}`);
+          }
+        } catch (error) {
+          backendCalls.push({ type: 'official', path: officialPath, status: 'error', error: String(error) });
+        }
+      }
+      
+      // 4. 条件执行：长任务检查（skill > 1 或 official > 1）
+      const isLongTask = workflowResult.matchedSkills.length > 1 || workflowResult.requiredOfficialFiles.length > 1;
+      let contextMemoryCheck = null;
+      if (isLongTask) {
+        console.error('[Workflow] 长任务，执行 context_memory 检查');
+        contextMemoryCheck = enforceContextMemoryEnabled(3, workflowResult.matchedSkills.length, true);
+      }
+      
+      // 5. 条件执行：对象ID检查（涉及对象操作）
+      const hasObjectOperation = /eid|entity|nodeid|featureid|对象|构件/i.test(userRequirement);
+      let objectIdsCheck = null;
+      if (hasObjectOperation) {
+        console.error('[Workflow] 涉及对象操作，执行 object_ids 检查');
+        objectIdsCheck = enforceObjectIdsValid([], true);
+      }
+      
+      // 6. 构建完整响应
+      const finalResult = {
+        ...workflowResult,
+        execution: {
+          scene,
+          isScene5,
+          isLongTask,
+          hasObjectOperation,
+          skillsRead: skillContents.map(s => s.path),
+          officialsRead: officialContents.map(o => o.path),
+          checks: {
+            contextMemory: contextMemoryCheck,
+            objectIds: objectIdsCheck
+          }
+        },
+        // 包含实际内容（限制长度避免过大）
+        skillContents: skillContents.map(s => ({
+          path: s.path,
+          preview: s.content.substring(0, 500)
+        })),
+        officialContents: officialContents.map(o => ({
+          path: o.path,
+          preview: o.content.substring(0, 500)
+        }))
+      };
+      
+      // 7. 记录完整对话日志
+      logConversation({
+        sessionId,
+        userName,
+        userInput: userRequirement,
+        toolName: 'start_wdp_workflow',
+        toolArgs: args,
+        scene,
+        isScene5,
+        projectPath,
+        backendCalls,
+        responsePreview: JSON.stringify(finalResult).substring(0, 500)
+      });
+      
+      console.error(`[Workflow] 工作流执行完成，共读取 ${skillContents.length} 个skill，${officialContents.length} 个official文档`);
+      
       return {
-        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
+        content: [{ type: 'text', text: JSON.stringify(finalResult, null, 2) }]
       };
     }
 

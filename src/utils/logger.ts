@@ -47,11 +47,15 @@ const queueSizes: { [key: string]: number } = {}; // 记录每个队列的字节
 
 // 写入配置
 const FLUSH_CONFIG = {
-  maxLines: 50,           // 最多缓存50行
-  maxBytes: 1024 * 1024, // 最多缓存1MB
-  maxDelayMs: 5000,      // 最多延迟5秒
-  profileSaveInterval: 5 * 60 * 1000 // 每5分钟保存用户画像
+  maxLines: 100,          // 最多缓存100行（增加批量大小）
+  maxBytes: 2 * 1024 * 1024, // 最多缓存2MB
+  maxDelayMs: 60000,      // 最多延迟60秒（延长定时器）
+  profileSaveInterval: 5 * 60 * 1000, // 每5分钟保存用户画像
+  callCountTrigger: 10    // 每10次调用触发一次写入
 };
+
+// 调用计数器
+const callCounters: { [key: string]: number } = {};
 
 // 用户画像缓存（内存中维护，定期写入文件）
 const userProfiles: Map<string, UserProfile> = new Map();
@@ -147,15 +151,18 @@ function queueLogWrite(queueKey: string, logFile: string, data: any): void {
   if (!logQueues[queueKey]) {
     logQueues[queueKey] = [];
     queueSizes[queueKey] = 0;
+    callCounters[queueKey] = 0;
   }
   
   logQueues[queueKey].push(logLine);
   queueSizes[queueKey] += lineBytes;
+  callCounters[queueKey] = (callCounters[queueKey] || 0) + 1;
   
-  // 检查是否需要立即写入（行数或大小超限）
+  // 检查是否需要立即写入
   const shouldFlushNow = 
     logQueues[queueKey].length >= FLUSH_CONFIG.maxLines ||
-    queueSizes[queueKey] >= FLUSH_CONFIG.maxBytes;
+    queueSizes[queueKey] >= FLUSH_CONFIG.maxBytes ||
+    callCounters[queueKey] >= FLUSH_CONFIG.callCountTrigger;
   
   if (shouldFlushNow) {
     // 立即写入，取消定时器
@@ -163,10 +170,14 @@ function queueLogWrite(queueKey: string, logFile: string, data: any): void {
       clearTimeout(flushTimers[queueKey]);
       flushTimers[queueKey] = null;
     }
+    // 重置调用计数器
+    callCounters[queueKey] = 0;
     flushLogQueue(queueKey, logFile);
   } else if (!flushTimers[queueKey]) {
     // 设置定时器，确保数据不会延迟太久
     flushTimers[queueKey] = setTimeout(() => {
+      // 定时器触发时也重置计数器
+      callCounters[queueKey] = 0;
       flushLogQueue(queueKey, logFile);
     }, FLUSH_CONFIG.maxDelayMs);
   }
@@ -727,6 +738,134 @@ export function flushAllQueues(): void {
   });
   
   console.log('[Logger] 所有日志队列已刷新');
+}
+
+// ============ 场景识别和对话日志功能 ============
+
+/**
+ * 场景关键词配置
+ */
+const SCENE_KEYWORDS = {
+  '场景1-加载知识库': ['了解', '知识库', '机制', '入口', '开始'],
+  '场景2-需求大纲解析': ['解析', '需求文档', '大纲', '文档'],
+  '场景3-单个需求描述': ['实现', '功能', '需求描述'],
+  '场景4-开始编码': ['编码', '写代码', '开发', '实现'],
+  '场景5-问题修复': ['排查', '问题', '修复', '报错', '错误', '异常', '不生效', '失败', 'bug'],
+  '场景6-续接进度': ['继续', '续接', '恢复', '状态'],
+  '场景7-回到主线': ['回到主线', '主线', '返回']
+};
+
+/**
+ * 识别用户输入场景
+ */
+export function detectScene(input: string): { scene: string; isScene5: boolean } {
+  const lowerInput = input.toLowerCase();
+  
+  for (const [scene, keywords] of Object.entries(SCENE_KEYWORDS)) {
+    if (keywords.some(keyword => lowerInput.includes(keyword.toLowerCase()))) {
+      return {
+        scene,
+        isScene5: scene === '场景5-问题修复'
+      };
+    }
+  }
+  
+  return { scene: '未知场景', isScene5: false };
+}
+
+/**
+ * 提取缓存信息
+ */
+export function extractCacheInfo(projectPath: string): any {
+  if (!projectPath) return null;
+  
+  const cacheDir = path.join(projectPath, '.wdp-cache');
+  
+  if (!fs.existsSync(cacheDir)) {
+    return {
+      cache_dir: cacheDir,
+      exists: false,
+      files: []
+    };
+  }
+  
+  try {
+    const files = fs.readdirSync(cacheDir);
+    const fileDetails = files.map(file => {
+      const filePath = path.join(cacheDir, file);
+      const stat = fs.statSync(filePath);
+      return {
+        name: file,
+        size: stat.size,
+        modified: stat.mtime.toISOString()
+      };
+    });
+    
+    return {
+      cache_dir: cacheDir,
+      exists: true,
+      files: fileDetails
+    };
+  } catch (error) {
+    return {
+      cache_dir: cacheDir,
+      exists: true,
+      error: '读取缓存目录失败'
+    };
+  }
+}
+
+/**
+ * 记录完整对话日志
+ */
+export function logConversation(data: {
+  sessionId: string;
+  userName?: string;
+  userInput: string;
+  toolName: string;
+  toolArgs: any;
+  scene: string;
+  isScene5: boolean;
+  projectPath?: string;
+  backendCalls?: any[];
+  responsePreview?: string;
+}): void {
+  const userName = data.userName || 'anonymous';
+  
+  // 提取缓存信息
+  const cacheInfo = data.projectPath ? extractCacheInfo(data.projectPath) : null;
+  
+  const logData = {
+    timestamp: new Date().toISOString(),
+    type: 'conversation',
+    session_id: data.sessionId,
+    user_name: userName,
+    user_input: data.userInput,
+    scene: data.scene,
+    is_scene5_error_report: data.isScene5,
+    tool: {
+      name: data.toolName,
+      args: data.toolArgs
+    },
+    project_path: data.projectPath,
+    backend_calls: data.backendCalls || [],
+    cache_info: cacheInfo,
+    response_preview: data.responsePreview?.substring(0, 500) // 限制长度
+  };
+  
+  // 写入对话日志
+  asyncWriteLog('conversations', logData, userName);
+  
+  // 如果是场景5，额外写入错误报告日志
+  if (data.isScene5) {
+    asyncWriteLog('error-reports', {
+      ...logData,
+      type: 'error_report',
+      problem_description: data.userInput
+    }, userName);
+  }
+  
+  console.error(`[Logger] 记录对话: ${data.toolName} | 场景: ${data.scene}${data.isScene5 ? ' | ⚠️场景5问题报告' : ''}`);
 }
 
 // 启动定期保存
