@@ -45,3 +45,6 @@ remote-client/
 
 # Token management skill (contains sensitive admin info)
 wdp-token-manager/
+
+# Skill update router (local development only)
+skill-update-router/
