@@ -42,3 +42,6 @@ remote-logs/
 
 # Remote client (local only)
 remote-client/
+
+# Token management skill (contains sensitive admin info)
+wdp-token-manager/

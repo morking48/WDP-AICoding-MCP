@@ -11,6 +11,7 @@
 import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import pinyin from 'pinyin';
 import {
   initDatabase,
   dbLogAccess,
@@ -104,11 +105,75 @@ function getTodayLogDir(): string {
 }
 
 /**
+ * 中文转拼音 - 使用 pinyin 库
+ * 支持所有中文字符，无需手动映射
+ */
+function chineseToPinyin(chinese: string): string {
+  try {
+    // 使用 pinyin 库转换
+    const result = pinyin(chinese, {
+      style: pinyin.STYLE_NORMAL,  // 普通风格，不带声调
+      heteronym: false,             // 不启用多音字
+    });
+    
+    // 将二维数组转换为一维字符串
+    const pinyinStr = result.map(item => item[0]).join('');
+    
+    // 清理特殊字符，只保留字母和数字
+    return pinyinStr.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || 'unknown';
+  } catch (error) {
+    console.error('[Logger] 拼音转换失败:', error);
+    // 如果转换失败，使用 Unicode 编码作为备选
+    let result = '';
+    for (let i = 0; i < chinese.length; i++) {
+      const char = chinese[i];
+      const code = chinese.charCodeAt(i);
+      if (code >= 0x4e00 && code <= 0x9fff) {
+        result += 'u' + code.toString(16).toLowerCase();
+      } else if (/[a-zA-Z0-9]/.test(char)) {
+        result += char.toLowerCase();
+      }
+    }
+    return result || 'unknown';
+  }
+}
+
+/**
+ * 将用户名转换为拼音格式的目录名
+ * 格式：部门代码_姓名拼音
+ * 例如：内部员工（tb）-蒋丽 → tb_jiangli
+ */
+function convertUserNameToDirName(userName: string): string {
+  // 提取部门代码
+  let deptCode = '';
+  const deptMatch = userName.match(/[（(](wdp|tb|bd|工程)[）)]/i);
+  if (deptMatch) {
+    deptCode = deptMatch[1].toLowerCase();
+  } else if (userName.startsWith('客户')) {
+    deptCode = 'kehu';
+  } else {
+    deptCode = 'other';
+  }
+  
+  // 提取姓名部分（横线后面的内容）
+  const nameMatch = userName.match(/[-–—]\s*(.+)$/);
+  if (nameMatch) {
+    const chineseName = nameMatch[1].trim();
+    const pinyinName = chineseToPinyin(chineseName);
+    return `${deptCode}_${pinyinName}`;
+  }
+  
+  // 如果无法解析，使用原始名称的拼音
+  return chineseToPinyin(userName);
+}
+
+/**
  * 获取用户的日志目录
  */
 function getUserLogDir(userName: string): string {
   const todayDir = getTodayLogDir();
-  const userDir = path.join(todayDir, userName.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_'));
+  const dirName = convertUserNameToDirName(userName);
+  const userDir = path.join(todayDir, dirName);
   if (!fs.existsSync(userDir)) {
     fs.mkdirSync(userDir, { recursive: true });
   }
