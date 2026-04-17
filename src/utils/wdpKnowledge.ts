@@ -1073,6 +1073,75 @@ export const MCP_TOOL_DEFINITIONS: MpcToolDefinition[] = [
       properties: {},
     },
   },
+  // ============ Context Memory 工具 ============
+  {
+    name: 'read_context_state',
+    description:
+      '读取上下文状态（Hot/Warm/Cold层）。Hot层：运行时状态（currentSkill, selection等）；Warm层：路由链路；Cold层：业务数据。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectPath: {
+          type: 'string',
+          description: '工程路径，用于定位缓存目录',
+        },
+        layer: {
+          type: 'string',
+          enum: ['hot', 'warm', 'cold'],
+          description: '存储层级：hot(运行时状态)、warm(路由链路)、cold(业务数据)',
+        },
+        path: {
+          type: 'string',
+          description: '数据路径，如 "currentRouting" 或 "entities.targetNodes"，为空则返回整个层级',
+        },
+      },
+      required: ['projectPath', 'layer'],
+    },
+  },
+  {
+    name: 'write_context_state',
+    description:
+      '写入上下文状态到指定层级。Hot层写入内存，Warm/Cold层写入文件。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectPath: {
+          type: 'string',
+          description: '工程路径',
+        },
+        layer: {
+          type: 'string',
+          enum: ['hot', 'warm', 'cold'],
+          description: '存储层级',
+        },
+        data: {
+          type: 'object',
+          description: '要写入的数据对象',
+        },
+      },
+      required: ['projectPath', 'layer', 'data'],
+    },
+  },
+  {
+    name: 'cleanup_context_memory',
+    description:
+      '手动清理上下文内存。可用于释放空间或重置状态。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectPath: {
+          type: 'string',
+          description: '工程路径',
+        },
+        layer: {
+          type: 'string',
+          enum: ['all', 'hot', 'warm', 'cold'],
+          description: '要清理的层级，all表示全部',
+        },
+      },
+      required: ['projectPath', 'layer'],
+    },
+  },
   // ============ 约束检查工具 ============
   {
     name: 'enforce_routing_check',

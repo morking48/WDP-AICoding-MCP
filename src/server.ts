@@ -1,13 +1,9 @@
-/**
- * WDP 云端知识引擎 - HTTP Server
- * 提供双协议支持：HTTP REST API + MCP (通过 SSE/WebSocket 桥接)
- */
-
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
 import path from 'path';
 import fs from 'fs';
+import { get } from 'lodash';
 import { 
   getOrCreateSessionId, 
   logRequest, 
@@ -46,17 +42,17 @@ import {
   enforceObjectIdsValid,
 } from './utils/wdpKnowledge';
 import {
+  getContextMemoryStore,
+  cleanupContextMemory
+} from './utils/contextMemory';
+import {
   logConversation,
   detectScene
 } from './utils/logger';
 
 // 配置
 const PORT = process.env.PORT || 3000;
-const HOST = process.env.HOST || '0.0.0.0';  // 默认监听所有网络接口，支持远程访问
-
-// 从环境变量加载Token配置
-// 格式：VALID_TOKENS=token1:名称1,token2:名称2
-// 如果没有设置，默认为空（需要管理员手动添加）
+const HOST = process.env.HOST || '0.0.0.0';
 const rawTokens = process.env.VALID_TOKENS || '';
 const VALID_TOKENS: string[] = [];
 
@@ -74,17 +70,12 @@ const KNOWLEDGE_BASE_PATH = process.env.KNOWLEDGE_BASE_PATH
   : path.resolve(__dirname, '../../WDP_AIcoding/skills');
 const LOGS_PATH = path.resolve(__dirname, '../logs/access.log');
 
-// Express 应用
 const app = express();
 const server = createServer(app);
 
-// 中间件
 app.use(cors());
 app.use(express.json());
 
-/**
- * 鉴权中间件
- */
 const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
   const token = req.headers.authorization?.replace('Bearer ', '') || req.body.token;
   
@@ -92,7 +83,6 @@ const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
     return res.status(401).json({ error: '缺少认证 Token' });
   }
   
-  // 检查Token是否被禁用
   if (isTokenDisabled(token)) {
     logAccess(req, 'AUTH_FAILED', { token, reason: 'Token已禁用' });
     return res.status(403).json({ 
@@ -107,27 +97,17 @@ const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
     return res.status(403).json({ error: '无效的 Token' });
   }
   
-  // 将 token 关联的用户信息附加到请求
   (req as any).userToken = token;
   (req as any).userInfo = tokenInfo;
   next();
 };
 
-/**
- * 日志记录 - 使用高级日志系统（增强版）
- */
 const logAccess = (req: Request, action: string, data: any = {}) => {
-  // 获取用户信息
   const userInfo = (req as any).userInfo;
   const userName = userInfo?.name || 'anonymous';
-  
-  // 获取或创建会话ID（传入正确的用户名）
   const sessionId = getOrCreateSessionId(req.ip || 'unknown', userName);
-  
-  // 记录开始时间（用于计算响应时间）
   const startTime = Date.now();
   
-  // 根据action类型调用不同的日志函数
   switch (action) {
     case 'GET_KNOWLEDGE':
     case 'QUERY_KNOWLEDGE':
@@ -183,7 +163,6 @@ const logAccess = (req: Request, action: string, data: any = {}) => {
       break;
   }
   
-  // 增强版访问日志
   const logEntry = {
     timestamp: new Date().toISOString(),
     type: 'access',
@@ -196,28 +175,15 @@ const logAccess = (req: Request, action: string, data: any = {}) => {
     ...data
   };
   
-  // 使用导入的 logAccess 函数（内部已实现双写）
   const { logAccess: logAccessFunc } = require('./utils/logger');
   logAccessFunc(logEntry);
-  
-  // 同时保留控制台输出
   console.log(`[LOG] ${action}:`, JSON.stringify(logEntry, null, 2));
 };
 
-// ============ HTTP API 路由 ============
-
-/**
- * 健康检查
- */
 app.get('/health', (req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-/**
- * 获取知识内容
- * GET /api/knowledge?path=xxx
- * 新策略：所有用户都可以访问，但公开用户不能查询SKILL.md详细内容
- */
 app.get('/api/knowledge', authMiddleware, (req: Request, res: Response) => {
   const { path: skillPath } = req.query;
   const token = (req as any).userToken;
@@ -227,7 +193,6 @@ app.get('/api/knowledge', authMiddleware, (req: Request, res: Response) => {
     return res.status(400).json({ error: '缺少 path 参数' });
   }
   
-  // 检查Token是否被禁用
   if (isTokenDisabled(token)) {
     logAccess(req, 'ACCESS_DENIED', { path: skillPath, reason: 'Token已禁用' });
     return res.status(403).json({ 
@@ -236,7 +201,6 @@ app.get('/api/knowledge', authMiddleware, (req: Request, res: Response) => {
     });
   }
   
-  // 检查是否为敏感路径
   if (isSensitivePath(skillPath)) {
     logAccess(req, 'ACCESS_DENIED', { path: skillPath, reason: '敏感资源' });
     return res.status(403).json({ 
@@ -261,10 +225,6 @@ app.get('/api/knowledge', authMiddleware, (req: Request, res: Response) => {
   });
 });
 
-/**
- * 查询知识 (POST，支持复杂查询)
- * POST /api/query
- */
 app.post('/api/query', authMiddleware, (req: Request, res: Response) => {
   const { query, skill_path } = req.body;
   const token = (req as any).userToken;
@@ -299,10 +259,6 @@ app.post('/api/query', authMiddleware, (req: Request, res: Response) => {
   res.json(response);
 });
 
-/**
- * 列出所有可用技能
- * GET /api/skills
- */
 app.get('/api/skills', authMiddleware, (req: Request, res: Response) => {
   const includeReferences =
     req.query.include_references === 'true' || req.query.includeReferences === 'true';
@@ -321,15 +277,9 @@ app.get('/api/skills', authMiddleware, (req: Request, res: Response) => {
   });
 });
 
-// ============ MCP 代理端点 ============
-
-/**
- * MCP 工具调用处理
- */
 async function handleMcpToolCall(name: string, args: any, req: Request): Promise<any> {
   switch (name) {
     case 'start_wdp_workflow': {
-      // 硬编码检查：必须有 user_requirement
       if (!args || typeof args.user_requirement !== 'string') {
         return {
           content: [{ 
@@ -340,7 +290,6 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
         };
       }
 
-      // 硬编码检查：必须有 projectPath
       if (!args.projectPath || typeof args.projectPath !== 'string') {
         return {
           content: [{ 
@@ -351,7 +300,6 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
         };
       }
 
-      // ====== 硬编码执行工作流 ======
       const sessionId = getOrCreateSessionId(req.ip || 'unknown', (req as any).userInfo?.name);
       const userName = (req as any).userInfo?.name;
       const userRequirement = args.user_requirement;
@@ -359,11 +307,9 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
       
       console.error(`[Workflow] 开始执行工作流: ${userRequirement.substring(0, 50)}...`);
       
-      // 1. 路由匹配（本地计算）
       const workflowResult = buildWorkflowResponse(userRequirement);
       const { scene, isScene5 } = detectScene(userRequirement);
       
-      // 2. 硬编码读取必要技能（按顺序）
       const skillsToRead = [
         'wdp-entry-agent/SKILL.md',
         'wdp-intent-orchestrator/SKILL.md',
@@ -386,7 +332,6 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
         }
       }
       
-      // 3. 硬编码读取官方文档
       const officialContents: any[] = [];
       for (const officialPath of workflowResult.requiredOfficialFiles) {
         try {
@@ -401,7 +346,6 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
         }
       }
       
-      // 4. 条件执行：长任务检查（skill > 1 或 official > 1）
       const isLongTask = workflowResult.matchedSkills.length > 1 || workflowResult.requiredOfficialFiles.length > 1;
       let contextMemoryCheck = null;
       if (isLongTask) {
@@ -409,7 +353,6 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
         contextMemoryCheck = enforceContextMemoryEnabled(3, workflowResult.matchedSkills.length, true);
       }
       
-      // 5. 条件执行：对象ID检查（涉及对象操作）
       const hasObjectOperation = /eid|entity|nodeid|featureid|对象|构件/i.test(userRequirement);
       let objectIdsCheck = null;
       if (hasObjectOperation) {
@@ -417,7 +360,6 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
         objectIdsCheck = enforceObjectIdsValid([], true);
       }
       
-      // 6. 构建完整响应
       const finalResult = {
         ...workflowResult,
         execution: {
@@ -432,7 +374,6 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
             objectIds: objectIdsCheck
           }
         },
-        // 包含实际内容（限制长度避免过大）
         skillContents: skillContents.map(s => ({
           path: s.path,
           preview: s.content.substring(0, 500)
@@ -443,7 +384,6 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
         }))
       };
       
-      // 7. 记录完整对话日志
       logConversation({
         sessionId,
         userName,
@@ -491,7 +431,6 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
         throw new Error('缺少 path 参数');
       }
       
-      // 检查是否为敏感路径
       if (isSensitivePath(args.path)) {
         return {
           content: [{ type: 'text', text: '错误: 无权访问该资源' }],
@@ -508,20 +447,18 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
         };
       }
       
-      // 生成结构化摘要和文件哈希
       const { generateDigest, computeFileHash, digestToText } = await import('./utils/wdpKnowledge');
       const digest = generateDigest(content, args.path);
       const fileHash = computeFileHash(content);
       
-      // 返回完整内容 + 摘要 + 哈希
       return {
         content: [{ 
           type: 'text', 
           text: JSON.stringify({
-            content: content,           // 完整内容（首次使用）
-            digest: digest,             // 结构化摘要
-            digestText: digestToText(digest),  // 摘要文本格式
-            fileHash: fileHash,         // 文件哈希（用于更新检测）
+            content: content,
+            digest: digest,
+            digestText: digestToText(digest),
+            fileHash: fileHash,
             path: args.path,
             timestamp: new Date().toISOString()
           }, null, 2)
@@ -552,7 +489,70 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
       };
     }
 
-    // ============ 约束检查工具 ============
+    // ============ Context Memory 工具 ============
+    case 'read_context_state': {
+      if (!args?.projectPath || !args?.layer) {
+        return {
+          content: [{ type: 'text', text: '错误: 缺少 projectPath 或 layer 参数' }],
+          isError: true,
+        };
+      }
+
+      const store = getContextMemoryStore(args.projectPath);
+      let result;
+
+      if (args.layer === 'hot') {
+        result = args.path ? store.readHot(args.path) : store.getAllHot();
+      } else {
+        const data = store.readFile(args.layer);
+        result = args.path ? get(data, args.path) : data;
+      }
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result ?? null, null, 2) }],
+      };
+    }
+
+    case 'write_context_state': {
+      if (!args?.projectPath || !args?.layer || !args?.data) {
+        return {
+          content: [{ type: 'text', text: '错误: 缺少必要参数' }],
+          isError: true,
+        };
+      }
+
+      const store = getContextMemoryStore(args.projectPath);
+
+      if (args.layer === 'hot') {
+        Object.entries(args.data).forEach(([key, value]) => {
+          store.writeHot(key, value);
+        });
+      } else {
+        const existing = store.readFile(args.layer);
+        store.writeFile(args.layer, { ...existing, ...args.data });
+      }
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ success: true, message: '写入成功' }) }],
+      };
+    }
+
+    case 'cleanup_context_memory': {
+      if (!args?.projectPath || !args?.layer) {
+        return {
+          content: [{ type: 'text', text: '错误: 缺少必要参数' }],
+          isError: true,
+        };
+      }
+
+      const store = getContextMemoryStore(args.projectPath);
+      store.cleanup(args.layer);
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ success: true, message: '清理完成' }) }],
+      };
+    }
+
     case 'enforce_routing_check': {
       if (!args || !args.workflow_result || !Array.isArray(args.skills_read)) {
         return {
@@ -618,13 +618,11 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
   }
 }
 
-// MCP 代理端点：获取工具定义
 app.get('/mcp/tools', authMiddleware, (req: Request, res: Response) => {
   logAccess(req, 'MCP_TOOLS_LIST', {});
   res.json({ tools: MCP_TOOL_DEFINITIONS });
 });
 
-// MCP 代理端点：调用工具
 app.post('/mcp/call', authMiddleware, async (req: Request, res: Response) => {
   const { name, arguments: args } = req.body;
   
@@ -647,11 +645,6 @@ app.post('/mcp/call', authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
-// ============ Token管理API（需要管理员权限） ============
-
-/**
- * 管理员验证中间件
- */
 const adminMiddleware = (req: Request, res: Response, next: NextFunction) => {
   const adminToken = req.headers['x-admin-token'] as string;
   
@@ -662,13 +655,9 @@ const adminMiddleware = (req: Request, res: Response, next: NextFunction) => {
   next();
 };
 
-/**
- * 获取所有Token列表
- * GET /admin/tokens
- */
 app.get('/admin/tokens', adminMiddleware, (req: Request, res: Response) => {
   const tokens = listTokens().map(({ token, info }) => ({
-    token: token.substring(0, 8) + '...', // 隐藏完整Token
+    token: token.substring(0, 8) + '...',
     name: info.name,
     disabled: info.disabled,
     disabledReason: info.disabledReason,
@@ -683,10 +672,6 @@ app.get('/admin/tokens', adminMiddleware, (req: Request, res: Response) => {
   });
 });
 
-/**
- * 添加新Token
- * POST /admin/tokens
- */
 app.post('/admin/tokens', adminMiddleware, (req: Request, res: Response) => {
   const { token, name } = req.body;
   
@@ -709,10 +694,6 @@ app.post('/admin/tokens', adminMiddleware, (req: Request, res: Response) => {
   });
 });
 
-/**
- * 更新Token权限
- * PUT /admin/tokens/:token
- */
 app.put('/admin/tokens/:token', adminMiddleware, (req: Request, res: Response) => {
   const { token } = req.params;
   const { name } = req.body;
@@ -731,10 +712,6 @@ app.put('/admin/tokens/:token', adminMiddleware, (req: Request, res: Response) =
   });
 });
 
-/**
- * 删除Token
- * DELETE /admin/tokens/:token
- */
 app.delete('/admin/tokens/:token', adminMiddleware, (req: Request, res: Response) => {
   const { token } = req.params;
   
@@ -752,10 +729,6 @@ app.delete('/admin/tokens/:token', adminMiddleware, (req: Request, res: Response
   });
 });
 
-/**
- * 禁用Token
- * POST /admin/tokens/:token/disable
- */
 app.post('/admin/tokens/:token/disable', adminMiddleware, (req: Request, res: Response) => {
   const { token } = req.params;
   const { reason } = req.body;
@@ -775,10 +748,6 @@ app.post('/admin/tokens/:token/disable', adminMiddleware, (req: Request, res: Re
   });
 });
 
-/**
- * 启用Token
- * POST /admin/tokens/:token/enable
- */
 app.post('/admin/tokens/:token/enable', adminMiddleware, (req: Request, res: Response) => {
   const { token } = req.params;
   
@@ -796,23 +765,19 @@ app.post('/admin/tokens/:token/enable', adminMiddleware, (req: Request, res: Res
   });
 });
 
-// 错误处理
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error('服务器错误:', err);
   res.status(500).json({ error: '服务器内部错误' });
 });
 
-// 初始化Token管理器
 initTokenManager();
 
-// 初始化日志系统（包括数据库）
 initLogger().then(() => {
   console.log('[Server] 日志系统初始化完成');
 }).catch(err => {
   console.error('[Server] 日志系统初始化失败:', err);
 });
 
-// 启动服务器
 server.listen(Number(PORT), HOST, () => {
   console.log(`\n🚀 WDP 云端知识引擎已启动`);
   console.log(`📡 HTTP API: http://${HOST}:${PORT}`);
@@ -826,7 +791,6 @@ server.listen(Number(PORT), HOST, () => {
   console.log(`  POST /api/query          - 查询知识`);
   console.log(`  GET  /api/skills         - 列出所有技能`);
   
-  // 检查是否有有效Token（环境变量 + 持久化文件）
   const allTokens = getValidTokens();
   if (allTokens.length === 0) {
     console.log(`\n⚠️  警告: 当前没有配置任何有效Token`);
