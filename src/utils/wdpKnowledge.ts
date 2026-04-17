@@ -534,7 +534,9 @@ export function searchKnowledgeBase(knowledgeBasePath: string, query: string, ma
       }
 
       const extension = path.extname(item).toLowerCase();
-      if (!SEARCHABLE_EXTENSIONS.has(extension) && item !== 'package.json') {
+      // 支持 universal-bootstrap.template.package.json 这类模板文件
+      const isTemplatePackageJson = item.includes('.template.') && item.endsWith('.package.json');
+      if (!SEARCHABLE_EXTENSIONS.has(extension) && item !== 'package.json' && !isTemplatePackageJson) {
         continue;
       }
 
@@ -630,9 +632,11 @@ export function listKnowledgeEntries(
         }
 
         const extension = path.extname(entry).toLowerCase();
+        // 支持 universal-bootstrap.template.* 模板文件
+        const isTemplateFile = entry.includes('.template.');
         const shouldInclude = includeReferences
-          ? SEARCHABLE_EXTENSIONS.has(extension) || entry === 'package.json'
-          : extension === '.md';
+          ? SEARCHABLE_EXTENSIONS.has(extension) || entry === 'package.json' || isTemplateFile
+          : extension === '.md' || isTemplateFile;
 
         if (!shouldInclude) {
           continue;

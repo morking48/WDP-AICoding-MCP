@@ -47,6 +47,13 @@ const SENSITIVE_PATHS = [
   'ONLINE_COVERAGE_AUDIT.md'
 ];
 
+// 模板文件路径映射（用于快速访问）
+const TEMPLATE_FILES = [
+  'official_api_code_example/universal-bootstrap.template.html',
+  'official_api_code_example/universal-bootstrap.template.main.js',
+  'official_api_code_example/universal-bootstrap.template.package.json'
+];
+
 /**
  * 检查路径是否为敏感路径
  */
@@ -176,6 +183,14 @@ function createMCPServer(): Server {
           const skills = listKnowledgeEntries(KNOWLEDGE_BASE_PATH, {
             includeReferences: Boolean(args?.include_references),
           });
+          
+          // 确保模板文件被包含在列表中
+          const templateFiles = TEMPLATE_FILES.map(templatePath => ({
+            name: path.basename(templatePath),
+            path: templatePath,
+            type: 'template',
+            isTemplate: true
+          }));
           
           return {
             content: [
