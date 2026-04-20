@@ -613,6 +613,66 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
       };
     }
 
+    case 'trigger_self_evaluation': {
+      if (!args || !Array.isArray(args.written_files) || !Array.isArray(args.used_skills)) {
+        return {
+          content: [{ type: 'text', text: '错误: 缺少必要参数 written_files 或 used_skills' }],
+          isError: true
+        };
+      }
+
+      let scenarioHint = '';
+      // 如果提供了 scenario_id，尝试读取业务场景 JSON（如果存在且结构匹配）
+      if (args.scenario_id) {
+        const scenarioPath = path.join(KNOWLEDGE_BASE_PATH, 'wdp-intent-orchestrator/resources/business-scenarios.json');
+        if (fs.existsSync(scenarioPath)) {
+          try {
+            const data = JSON.parse(fs.readFileSync(scenarioPath, 'utf-8'));
+            const scenario = data.scenarios?.find((s: any) => s.id === args.scenario_id);
+            if (scenario && scenario.cleanup_chain) {
+              scenarioHint = `\n\n【场景专项约束（${scenario.name}）】\n根据该场景的定义，你必须确保代码中包含了以下清理链路（Cleanup Chain）：\n${scenario.cleanup_chain.join(' -> ')}\n请立刻核对你的代码，若缺失请补充！`;
+            }
+          } catch (e) {
+            console.error('读取 business-scenarios.json 失败', e);
+          }
+        }
+      }
+
+      const reviewPrompt = `【进入自我审查与修复模式 (Self-healing Mode)】
+请立即审视你刚刚编写或修改的以下文件：
+${args.written_files.join('\n')}
+
+你使用了以下 WDP Skill: [${args.used_skills.join(', ')}]
+
+请**强制**对照以下铁律进行严格的本地代码审查（自我评测）：
+
+1. [占位符残留检查 (Mock Data Leak)]：
+   - 立即全局搜索你修改的文件。是否存在 \`YOUR_URL\`, \`TODO\`, \`123\`, \`[0,0,0]\`, \`dummy\` 等未被真实数据替换的占位符？
+   - **绝对禁止提交带有占位符的代码**，你必须去寻找真实数据、调用上下文状态或询问用户。
+
+2. [API 大小写与签名检查 (Case & Signature Check)]：
+   - WDP API 严格区分大小写（例如必须是 \`api.Camera.FlyTo\` 而不是 \`api.camera.flyTo\`）。
+   - 请对照你阅读的 \`official-xxx.md\`，逐字检查调用的方法名和传入的参数类型（如：传的是对象还是数组？）。
+
+3. [生命周期成对检查 (Lifecycle Pairing Check)]：
+   - 在 React/Vue 中，只要你在 \`useEffect/mounted\` 里写了 \`api.Event.On\` (注册事件) 或 \`api.XX.Add\` (添加对象)。
+   - 你**必须、立刻、马上**去对应的清理块（\`return () => {}\` 或 \`unmounted\`）中检查，是否有严格对应的 \`api.Event.Off\` 或 \`api.XX.Remove\`。
+   - 缺失清理逻辑会导致 WDP 引擎严重的内存泄漏！
+
+4. [初始化顺序检查 (Init Order Check)]：
+   - 检查 \`Plugin.Install\`（如果有用到插件）是否严格放在了 \`Renderer.Start\` 之前调用？${scenarioHint}
+
+【行动指令】：
+- 如果你发现任何一项不符合，请**立即使用编辑文件的工具进行修复（Self-healing）**，修复完成后不需要再次调用本工具，直接告诉用户任务完成。
+- 如果检查后确信代码 100% 符合上述所有铁律，请向用户汇报："已完成强制代码自评测，代码状态健康"。`;
+
+      // 故意返回 isError: true 以触发主流大模型的异常处理反思循环
+      return {
+        content: [{ type: 'text', text: reviewPrompt }],
+        isError: true
+      };
+    }
+
     default:
       throw new Error(`未知工具: ${name}`);
   }

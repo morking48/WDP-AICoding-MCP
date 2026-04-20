@@ -696,6 +696,12 @@ export function buildWorkflowResponse(userRequirement: string): WorkflowResponse
       trigger: '涉及对象操作时',
       blockOnFailure: true,
     },
+    {
+      name: 'code_evaluation',
+      tool: 'trigger_self_evaluation',
+      trigger: '代码编写完成后，向用户汇报前',
+      blockOnFailure: true,
+    },
   ];
 
   return {
@@ -1236,6 +1242,31 @@ export const MCP_TOOL_DEFINITIONS: MpcToolDefinition[] = [
         },
       },
       required: ['object_ids'],
+    },
+  },
+  {
+    name: 'trigger_self_evaluation',
+    description:
+      '【强制检查点 - 编码后必须调用】在代码编写完成后、向用户汇报之前必须调用。用于触发强制的底线 Review 和生命周期检查。如果发现不符合返回要求的点，你必须自我修复代码。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        written_files: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '刚刚编写或修改的文件路径列表',
+        },
+        used_skills: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '编码过程中使用的 WDP Skill 列表（例如 "wdp-api-bim-unified"）',
+        },
+        scenario_id: {
+          type: 'string',
+          description: '当前识别到的业务场景 ID（如 video-perimeter-monitoring，如果未知则留空）',
+        },
+      },
+      required: ['written_files', 'used_skills'],
     },
   },
 ];
