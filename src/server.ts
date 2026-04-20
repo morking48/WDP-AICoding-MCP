@@ -40,6 +40,7 @@ import {
   enforceOfficialDocsRead,
   enforceContextMemoryEnabled,
   enforceObjectIdsValid,
+  enforceProjectScaffoldingValid,
 } from './utils/wdpKnowledge';
 import {
   getContextMemoryStore,
@@ -348,9 +349,12 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
       
       const isLongTask = workflowResult.matchedSkills.length > 1 || workflowResult.requiredOfficialFiles.length > 1;
       let contextMemoryCheck = null;
-      if (isLongTask) {
-        console.error('[Workflow] 长任务，执行 context_memory 检查');
-        contextMemoryCheck = enforceContextMemoryEnabled(3, workflowResult.matchedSkills.length, true);
+      // 降低触发长任务的阈值：匹配的技能数 > 0 或 必须加载的 official 文档数 > 0 即视为可能需要 memory 机制
+      const isLongTaskModified = workflowResult.matchedSkills.length > 0 || workflowResult.requiredOfficialFiles.length > 0;
+      if (isLongTaskModified) {
+        console.error('[Workflow] 检测到复杂任务，执行 context_memory 检查');
+        // 修改这里的阈值：将原本需要的 3 轮对话要求降低为 1 轮
+        contextMemoryCheck = enforceContextMemoryEnabled(1, workflowResult.matchedSkills.length, true);
       }
       
       const hasObjectOperation = /eid|entity|nodeid|featureid|对象|构件/i.test(userRequirement);
@@ -613,6 +617,21 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
       };
     }
 
+    case 'enforce_project_scaffolding_valid': {
+      if (!args || typeof args.projectPath !== 'string') {
+        return {
+          content: [{ type: 'text', text: '错误: 缺少必要参数 projectPath' }],
+          isError: true
+        };
+      }
+
+      const result = enforceProjectScaffoldingValid(args.projectPath);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        isError: !result.passed
+      };
+    }
+
     case 'trigger_self_evaluation': {
       if (!args || !Array.isArray(args.written_files) || !Array.isArray(args.used_skills)) {
         return {
@@ -660,7 +679,12 @@ ${args.written_files.join('\n')}
    - 缺失清理逻辑会导致 WDP 引擎严重的内存泄漏！
 
 4. [初始化顺序检查 (Init Order Check)]：
-   - 检查 \`Plugin.Install\`（如果有用到插件）是否严格放在了 \`Renderer.Start\` 之前调用？${scenarioHint}
+   - 检查 \`Plugin.Install\`（如果有用到插件）是否严格放在了 \`Renderer.Start\` 之前调用？
+
+5. [工程化基线检查 (Project Scaffolding Check)]：
+   - 根目录下是否有 package.json？其中是否有 wdpapi 依赖？
+   - 入口 html 中是否使用了 <script src="http...wdpapi.js">？如果是，你必须立即删除它，并改为 <script type="module" src="..."> 以及配置 npm！
+   - **绝对禁止使用 CDN 标签绕过 npm 体系！**\${scenarioHint}
 
 【行动指令】：
 - 如果你发现任何一项不符合，请**立即使用编辑文件的工具进行修复（Self-healing）**，修复完成后不需要再次调用本工具，直接告诉用户任务完成。

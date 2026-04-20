@@ -38,6 +38,7 @@ export interface WorkflowResponse {
   mode: WorkflowMode;
   confidence: number;
   userRequirement: string;
+  projectPath: string;
   matchedDomains: string[];
   matchedSkills: string[];
   requiredOfficialFiles: string[];
@@ -208,8 +209,8 @@ const SKILL_ROUTE_CONFIGS: SkillRouteConfig[] = [
     label: '场景初始化',
     skillPath: 'wdp-api-initialization-unified/SKILL.md',
     officialFiles: ['official_api_code_example/official-initialize-scene.md'],
-    keywords: ['初始化', '启动', '接入', '白屏', '渲染', 'renderer.start', 'new wdpapi', 'sdk'],
-    scenarios: ['场景初始化、渲染器启动'],
+    keywords: ['初始化', '启动', '接入', '白屏', '渲染', 'renderer.start', 'new wdpapi', 'sdk', '智能建模系列', '静态实例模型', '建模', '静态', '实例'],
+    scenarios: ['场景初始化、渲染器启动、智能建模系列、静态实例模型'],
   },
   {
     label: '点聚合Cluster',
@@ -245,13 +246,6 @@ const SKILL_ROUTE_CONFIGS: SkillRouteConfig[] = [
     officialFiles: ['official_api_code_example/official-spatial-understanding.md'],
     keywords: ['坐标', '空间理解', '取点', '屏幕坐标', '经纬度转换', '定位', 'spatial'],
     scenarios: ['空间理解、坐标转换、取点交互、GIS坐标'],
-  },
-  {
-    label: 'CSS层叠管理',
-    skillPath: 'wdp-css-layer-management/SKILL.md',
-    officialFiles: [],
-    keywords: ['css', 'z-index', 'pointer-events', '遮挡', '层级', '弹层'],
-    scenarios: ['CSS层叠管理、z-index、pointer-events、UI层级'],
   },
 ];
 
@@ -658,7 +652,7 @@ export function listKnowledgeEntries(
   return listDir(knowledgeBasePath);
 }
 
-export function buildWorkflowResponse(userRequirement: string): WorkflowResponse {
+export function buildWorkflowResponse(userRequirement: string, projectPath?: string): WorkflowResponse {
   const expandedQueries = expandQuery(userRequirement);
   const matchedRoutes = inferRouteMatches(userRequirement);
   const missingRequiredParams = inferMissingParams(userRequirement);
@@ -670,6 +664,13 @@ export function buildWorkflowResponse(userRequirement: string): WorkflowResponse
 
   // 构建强制检查点
   const mandatoryCheckpoints: MandatoryCheckpoint[] = [
+    {
+      name: 'project_scaffolding_check',
+      tool: 'enforce_project_scaffolding_valid',
+      trigger: '第一轮编码/生成基础框架前',
+      blockOnFailure: true,
+      params: { description: "验证当前项目目录是否存在 package.json 且依赖了 wdpapi。如果尝试使用 html <script> 引入而不使用前端构建工具，直接阻断代码生成。" }
+    },
     {
       name: 'routing_check',
       tool: 'enforce_routing_check',
@@ -704,12 +705,18 @@ export function buildWorkflowResponse(userRequirement: string): WorkflowResponse
     },
   ];
 
+  // 【硬编码】强制工作目录声明
+  const workingDirectoryHint = projectPath 
+    ? `\n\n【⚠️ 强制工作目录约束】\n你的工程路径是: ${projectPath}\n所有文件操作（创建、修改、安装依赖）必须在此路径下进行！禁止在当前工作目录或其他位置创建文件。`
+    : '';
+
   return {
     success: true,
     title: 'WDP 开发工作流启动',
     mode,
     confidence,
     userRequirement,
+    projectPath: projectPath || '未指定',
     matchedDomains: matchedRoutes.map((route) => route.label),
     matchedSkills: matchedRoutes.map((route) => route.skillPath),
     requiredOfficialFiles,
@@ -719,8 +726,8 @@ export function buildWorkflowResponse(userRequirement: string): WorkflowResponse
     canGenerateCode: mode === 'ready' && requiredOfficialFiles.length > 0,
     guidance:
       mode === 'ready'
-        ? `已命中 WDP 路由。【关键】编码前必须依次调用 mandatoryCheckpoints 中的检查工具。如果检查未通过，禁止生成代码。`
-        : `当前仍需补充信息或读取 official 文档。未确认到真值前，不要自行编排 WDP 方法名和参数名。`,
+        ? `已命中 WDP 路由。【关键】编码前必须依次调用 mandatoryCheckpoints 中的检查工具。如果检查未通过，禁止生成代码。${workingDirectoryHint}`
+        : `当前仍需补充信息或读取 official 文档。未确认到真值前，不要自行编排 WDP 方法名和参数名。${workingDirectoryHint}`,
     workflowSteps: [
       {
         step: 1,
@@ -748,7 +755,7 @@ export function buildWorkflowResponse(userRequirement: string): WorkflowResponse
       {
         step: 4,
         name: '技能路由与真值确认',
-        action: '根据命中的技能读取 sub skill，并继续读取 official 文档确认 API 真值',
+        action: '根据命中的技能读取 sub skill，并继续读取 official 文档确认 API 真值（模板文件必须强制读取）',
         skillMapping: SKILL_MAPPING,
         matchedSkills: matchedRoutes.map((route) => ({
           label: route.label,
@@ -776,6 +783,8 @@ export function buildWorkflowResponse(userRequirement: string): WorkflowResponse
           '已确认 WDP 服务 URL，不使用占位符',
           '已确认 Order 或验证口令',
           '已读取命中的 official-*.md 文档',
+          '已读取所有相关的 universal-bootstrap.template 模板文件',
+          '已确认前端基于 package.json 进行工程化构建',
           '已确认插件安装顺序在 Renderer.Start 之前',
           '已准备开启与关闭两条清理路径',
         ],
@@ -948,7 +957,7 @@ export function enforceContextMemoryEnabled(
   skillsCount: number,
   memoryEnabled: boolean
 ): ConstraintCheckResult {
-  const isLongTask = dialogueRounds > 3 || skillsCount > 1;
+  const isLongTask = dialogueRounds >= 1 || skillsCount > 0;
 
   if (isLongTask && !memoryEnabled) {
     return {
@@ -992,6 +1001,76 @@ export function enforceObjectIdsValid(
       message: `发现无效对象 Id: ${invalidIds.map((i) => i.name).join(', ')}`,
       action: `请通过创建返回值、屏幕拾取、事件回调、实体查询、BIM 查询或 GIS 查询获取真实 Id，禁止使用假值`,
       missingItems: invalidIds.map((i) => i.name),
+    };
+  }
+
+  return { passed: true, block: false };
+}
+
+/**
+ * 强制检查：工程初始化基线检查
+ * 验证工程目录下是否有 package.json 及其依赖
+ */
+export function enforceProjectScaffoldingValid(
+  projectPath: string
+): ConstraintCheckResult {
+  if (!projectPath) {
+    return {
+      passed: false,
+      block: true,
+      message: `必须提供目标工程根目录 (projectPath)`,
+      action: `请重新调用 enforce_project_scaffolding_valid 并提供正确的 projectPath`,
+    };
+  }
+
+  const pkgJsonPath = path.join(projectPath, 'package.json');
+  
+  if (!fs.existsSync(pkgJsonPath)) {
+    return {
+      passed: false,
+      block: true,
+      message: `在工程根目录 ${projectPath} 下未找到 package.json`,
+      action: `【架构铁律】禁止直接使用 <script> 引入 wdpapi！请使用前端构建工具 (如 Vite/Webpack) 初始化工程，并运行 npm init 创建 package.json。`,
+    };
+  }
+
+  try {
+    const pkgContent = fs.readFileSync(pkgJsonPath, 'utf-8');
+    const pkg = JSON.parse(pkgContent);
+    const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+    
+    if (!deps['wdpapi']) {
+      return {
+        passed: false,
+        block: true,
+        message: `在 package.json 中未找到 wdpapi 依赖`,
+        action: `【架构铁律】必须采用 npm 工程化基线！请在 package.json 中添加 "wdpapi" 依赖，并执行 npm install。`,
+      };
+    }
+
+    // BIM 和 GIS 插件依赖检查
+    const missingPlugins: string[] = [];
+    if (projectPath.toLowerCase().includes('bim') || JSON.stringify(deps).toLowerCase().includes('bim')) {
+      if (!deps['@wdp-api/bim-api']) missingPlugins.push('@wdp-api/bim-api');
+    }
+    if (projectPath.toLowerCase().includes('gis') || JSON.stringify(deps).toLowerCase().includes('gis')) {
+      if (!deps['@wdp-api/gis-api']) missingPlugins.push('@wdp-api/gis-api');
+    }
+
+    if (missingPlugins.length > 0) {
+      return {
+        passed: false,
+        block: true,
+        message: `在 package.json 中未找到必需的插件依赖: ${missingPlugins.join(', ')}`,
+        action: `【架构铁律】当前场景涉及 BIM/GIS，必须安装对应插件！请执行 npm install ${missingPlugins.join(' ')}。`,
+      };
+    }
+  } catch (error) {
+    return {
+      passed: false,
+      block: true,
+      message: `解析 package.json 失败: ${error}`,
+      action: `请修复 package.json 的语法错误`,
     };
   }
 
@@ -1196,7 +1275,7 @@ export const MCP_TOOL_DEFINITIONS: MpcToolDefinition[] = [
     name: 'enforce_context_memory_check',
     description:
       '【强制检查点 - 长任务编码前必须调用】验证是否已启用 context-memory 状态管理。' +
-      '如果对话>3轮或涉及多个 skill 但未启用，返回 isError=true。',
+      '如果对话>=1轮或涉及任意 skill 但未启用，返回 isError=true。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1242,6 +1321,22 @@ export const MCP_TOOL_DEFINITIONS: MpcToolDefinition[] = [
         },
       },
       required: ['object_ids'],
+    },
+  },
+  {
+    name: 'enforce_project_scaffolding_valid',
+    description:
+      '【强制检查点 - 第一轮编码/生成基础框架前必须调用】验证目标目录是否包含 package.json，并且包含 wdpapi 依赖。' +
+      '如果通过 html <script> 引入而不使用前端构建工具，返回 isError=true，禁止生成后续代码。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectPath: {
+          type: 'string',
+          description: '目标工程根目录',
+        },
+      },
+      required: ['projectPath'],
     },
   },
   {
