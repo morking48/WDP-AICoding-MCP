@@ -641,19 +641,46 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
       }
 
       let scenarioHint = '';
-      // 如果提供了 scenario_id，尝试读取业务场景 JSON（如果存在且结构匹配）
+      // 如果提供了 scenario_id，尝试从新的分拆结构中读取业务场景 JSON
       if (args.scenario_id) {
-        const scenarioPath = path.join(KNOWLEDGE_BASE_PATH, 'wdp-intent-orchestrator/resources/business-scenarios.json');
-        if (fs.existsSync(scenarioPath)) {
-          try {
-            const data = JSON.parse(fs.readFileSync(scenarioPath, 'utf-8'));
-            const scenario = data.scenarios?.find((s: any) => s.id === args.scenario_id);
-            if (scenario && scenario.cleanup_chain) {
-              scenarioHint = `\n\n【场景专项约束（${scenario.name}）】\n根据该场景的定义，你必须确保代码中包含了以下清理链路（Cleanup Chain）：\n${scenario.cleanup_chain.join(' -> ')}\n请立刻核对你的代码，若缺失请补充！`;
+        const scenarioIndexPaths = [
+          path.join(KNOWLEDGE_BASE_PATH, 'wdp-intent-orchestrator/resources/business-scenarios/_index.json'),
+          path.join(KNOWLEDGE_BASE_PATH, 'wdp-intent-orchestrator/resources/business-scenarios.json') // 兼容旧版
+        ];
+        
+        let scenarioData: any = null;
+        let scenarioDetail: any = null;
+
+        for (const indexPath of scenarioIndexPaths) {
+          if (fs.existsSync(indexPath)) {
+            try {
+              const data = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+              const scenarioEntry = data.scenarios?.find((s: any) => s.id === args.scenario_id);
+              
+              if (scenarioEntry) {
+                // 如果是新版分拆结构，尝试读取详情文件
+                if (scenarioEntry.file) {
+                  const detailPath = path.join(path.dirname(indexPath), 'business-scenarios', scenarioEntry.file);
+                  if (fs.existsSync(detailPath)) {
+                    scenarioDetail = JSON.parse(fs.readFileSync(detailPath, 'utf-8'));
+                  }
+                }
+                // 如果详情文件里没找到，或者本身就是旧版结构
+                scenarioData = scenarioDetail || scenarioEntry;
+                break;
+              }
+            } catch (e) {
+              console.error(`读取业务场景配置失败 (${indexPath}):`, e);
             }
-          } catch (e) {
-            console.error('读取 business-scenarios.json 失败', e);
           }
+        }
+
+        if (scenarioData && scenarioData.cleanup_chain) {
+          const cleanupChain = Array.isArray(scenarioData.cleanup_chain) 
+            ? scenarioData.cleanup_chain.map((item: any) => typeof item === 'object' ? item.create || item.cleanup : item).join(' -> ')
+            : scenarioData.cleanup_chain;
+
+          scenarioHint = `\n\n【场景专项约束（${scenarioData.name}）】\n根据该场景的定义，你必须确保代码中包含了以下清理链路（Cleanup Chain）：\n${cleanupChain}\n请立刻核对你的代码，若缺失请补充！`;
         }
       }
 
