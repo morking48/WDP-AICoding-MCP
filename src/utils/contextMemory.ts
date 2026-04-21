@@ -102,7 +102,7 @@ export class ContextMemoryStore {
     }
   }
 
-  // ========== 清理过期文件 ==========
+  // ========== 清理过期文件 (统一缓存管家) ==========
   private cleanupExpiredFiles() {
     const metaPath = path.join(this.memoryDir, 'meta.json');
     if (!fs.existsSync(metaPath)) return;
@@ -122,12 +122,26 @@ export class ContextMemoryStore {
       }
 
       // Cold: 30天过期
+      // 【优化】实现级联清理：业务数据过期意味着整个项目不再活跃，同步清理系统 Cache
       if (meta.coldLastAccess && (now - meta.coldLastAccess) > 30 * DAY) {
         const coldPath = path.join(this.memoryDir, 'cold.json');
         if (fs.existsSync(coldPath)) {
           fs.unlinkSync(coldPath);
           console.log('[ContextMemory] Cold 层已过期清理');
         }
+
+        // 级联清理 Token Cache 目录中的相关文件 (如果存在)
+        const parentCacheDir = path.dirname(this.memoryDir);
+        const systemCacheFiles = ['skill-digest.json', 'official-docs-index.json'];
+        systemCacheFiles.forEach(f => {
+          const p = path.join(parentCacheDir, f);
+          if (fs.existsSync(p)) {
+            try {
+              fs.unlinkSync(p);
+              console.log(`[ContextMemory] 级联清理系统缓存: ${f}`);
+            } catch(e) {}
+          }
+        });
       }
     } catch (error) {
       console.error('[ContextMemory] 清理过期文件失败:', error);

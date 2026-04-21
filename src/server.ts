@@ -308,7 +308,36 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
       
       console.error(`[Workflow] 开始执行工作流: ${userRequirement.substring(0, 50)}...`);
       
-      const workflowResult = buildWorkflowResponse(userRequirement);
+      const workflowResult = buildWorkflowResponse(userRequirement, projectPath);
+
+      // 【关键修复】自动记录意图路由到 Warm 层，防止长对话后丢失原始规划
+      try {
+        const store = getContextMemoryStore(projectPath);
+        const currentRouting = {
+          title: workflowResult.title,
+          matchedSkills: workflowResult.matchedSkills,
+          requiredOfficialFiles: workflowResult.requiredOfficialFiles,
+          timestamp: workflowResult.timestamp
+        };
+        const existingWarm = store.readFile('warm');
+        
+        // 【优化】轻量化路由存根记录 (只保留最近3次，防止 JSON 过大)
+        const routingChain = [...(existingWarm.routingChain || []), { ...currentRouting, requirement: userRequirement }];
+        const trimmedChain = routingChain.slice(-3);
+        
+        // 【优化】自动生成当前任务核心摘要 (给落后模型的降维打击)
+        const contextSummary = `当前任务：${userRequirement.substring(0, 30)}... | 必须真值：${workflowResult.requiredOfficialFiles.join(', ')}`;
+
+        store.writeFile('warm', { 
+          ...existingWarm, 
+          currentRouting,
+          contextSummary,
+          routingChain: trimmedChain
+        });
+        console.error('[ContextMemory] 已自动将意图路由存入 Warm 层');
+      } catch (err) {
+        console.error('[ContextMemory] 自动记录路由失败:', err);
+      }
       const { scene, isScene5 } = detectScene(userRequirement);
       
       const skillsToRead = [
@@ -353,6 +382,20 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
       const isLongTaskModified = workflowResult.matchedSkills.length > 0 || workflowResult.requiredOfficialFiles.length > 0;
       if (isLongTaskModified) {
         console.error('[Workflow] 检测到复杂任务，执行 context_memory 检查');
+        // 自动注入当前 Memory 状态供 AI 参考（解决 AI 不主动读缓存的问题）
+        try {
+          const store = getContextMemoryStore(projectPath);
+          const warmData = store.readFile('warm');
+          if (warmData && (warmData.currentRouting || warmData.contextSummary)) {
+             (workflowResult as any).activeContext = {
+                layer: "warm",
+                summary: warmData.contextSummary,
+                data: warmData.currentRouting,
+                hint: "【架构记忆】这是本地缓存的原始设计意图，若后续步骤产生幻觉，请优先以此为准。"
+             };
+          }
+        } catch (e) {}
+
         // 修改这里的阈值：将原本需要的 3 轮对话要求降低为 1 轮
         contextMemoryCheck = enforceContextMemoryEnabled(1, workflowResult.matchedSkills.length, true);
       }
@@ -455,13 +498,32 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
       const digest = generateDigest(content, args.path);
       const fileHash = computeFileHash(content);
       
+      // 【硬编码优化】长篇文档自动摘要机制 (降维打击)
+      // 如果文件很大，且没有明确要求 force_full，优先只返回精简摘要，避免撑爆模型上下文。
+      const isOfficialDoc = args.path.includes('official-');
+      const isLargeFile = content.length > 5000;
+      const shouldReturnDigest = isOfficialDoc && isLargeFile && !args.force_full;
+
+      let returnContent = content;
+      let guidanceHint = '';
+
+      if (shouldReturnDigest) {
+        returnContent = digestToText(digest);
+        guidanceHint = '【系统提示】由于该官方文档过长，为节省上下文，本次仅返回核心 API 签名摘要。如果你需要某个 API 的详细完整代码示例，请使用参数 "force_full": true 重新调用本工具读取该文件。';
+        console.error(`[Token Cache] 触发降级摘要返回: ${args.path}`);
+      }
+
+      // 【记忆机制补丁】将核心读取记录悄悄塞入 Hot Memory，防遗忘
+      // 注意：这里需要项目路径，但由于这个老工具原本不传 projectPath，
+      // 我们从 req 中的最近一次 session/状态里去尝试获取（如果可能），或直接利用前面遗留的长会话。
+      // 在这里仅记录日志，由 workflow 返回时的机制兜底。
+
       return {
         content: [{ 
           type: 'text', 
           text: JSON.stringify({
-            content: content,
-            digest: digest,
-            digestText: digestToText(digest),
+            guidance: guidanceHint || undefined,
+            content: returnContent,
             fileHash: fileHash,
             path: args.path,
             timestamp: new Date().toISOString()
