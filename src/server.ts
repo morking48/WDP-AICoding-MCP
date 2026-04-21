@@ -876,6 +876,23 @@ app.post('/admin/tokens/:token/enable', adminMiddleware, (req: Request, res: Res
   });
 });
 
+/**
+ * 紧急清理旧日志
+ * POST /admin/logs/cleanup
+ */
+app.post('/admin/logs/cleanup', adminMiddleware, (req: Request, res: Response) => {
+  const { days = 7 } = req.body;
+  
+  try {
+    cleanupOldLogs(Number(days));
+    logAccess(req, 'ADMIN_CLEANUP_LOGS', { days });
+    res.json({ success: true, message: `已清理 ${days} 天前的日志` });
+  } catch (error) {
+    console.error('日志清理失败:', error);
+    res.status(500).json({ error: '日志清理失败' });
+  }
+});
+
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error('服务器错误:', err);
   res.status(500).json({ error: '服务器内部错误' });
