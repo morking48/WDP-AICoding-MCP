@@ -51,3 +51,6 @@ skill-update-router/
 
 # Local deployment guide (contains sensitive local info)
 WDP-API-MCP-Deployment-Guide-local.md
+
+# Local git operation reminder (do not sync)
+.GIT_PUSH_REMINDER.md
