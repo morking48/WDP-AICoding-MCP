@@ -99,8 +99,14 @@ const SEARCHABLE_EXTENSIONS = new Set(['.md', '.json', '.js', '.html']);
 const DIRECT_CODE_SAFE_PATHS = new Set([
   'official_api_code_example/official-bim-full.md',
   'official_api_code_example/official-cluster.md',
-  'official_api_code_example/official-entity-coverings.md',
-  'official_api_code_example/official-entity-general-behavior.md',
+  // coverings 拆分后
+  'official_api_code_example/official-entity-coverings-spatial.md',
+  'official_api_code_example/official-entity-coverings-path.md',
+  'official_api_code_example/official-entity-coverings-effects.md',
+  // behavior 拆分后
+  'official_api_code_example/official-entity-general-behavior-core.md',
+  'official_api_code_example/official-entity-general-behavior-interaction.md',
+  'official_api_code_example/official-entity-general-behavior-movement.md',
   'official_api_code_example/official-function-components.md',
   'official_api_code_example/official-general-event-registration.md',
   'official_api_code_example/official-generic-base-attributes.md',
@@ -187,16 +193,58 @@ const SKILL_ROUTE_CONFIGS: SkillRouteConfig[] = [
   {
     label: '实体通用行为',
     skillPath: 'wdp-api-entity-general-behavior/SKILL.md',
-    officialFiles: ['official_api_code_example/official-entity-general-behavior.md'],
-    keywords: ['实体', '显隐', '删除', '检索', '描边', '高亮', 'entity', '落地'],
-    scenarios: ['实体行为、实体高亮、实体描边'],
+    officialFiles: [
+      'official_api_code_example/official-entity-general-behavior-core.md',
+      'official_api_code_example/official-entity-general-behavior-interaction.md',
+      'official_api_code_example/official-entity-general-behavior-movement.md',
+    ],
+    keywords: [
+      // 核心查询与管理
+      '实体', '显隐', '删除', '检索', '查询', 'getby', 'clearby',
+      'setvisible', 'focus', 'eid', 'entityname', 'customid', 'type',
+      // 交互与编辑
+      '描边', '高亮', 'outline', 'highlight', '选中', 'selection',
+      '拾取', 'picker', '修改', 'modify', '裁剪', 'clip',
+      // 移动与批量
+      '移动', 'bound', '沿路径运动', '批量', 'scene.create', 'scene.creates',
+      '落地', 'snapto',
+      // 通用
+      'entity',
+    ],
+    scenarios: [
+      '实体查询与管理（GetByXxx/Clear/SetVisible/Focus）',
+      '实体交互与编辑（Picker/Selection/Outline/Highlight/Modify/Clip）',
+      '实体移动与批量操作（Bound/Scene.Create/Creates）',
+    ],
   },
   {
     label: '覆盖物管理',
     skillPath: 'wdp-api-coverings-unified/SKILL.md',
-    officialFiles: ['official_api_code_example/official-entity-coverings.md'],
-    keywords: ['poi', '覆盖物', '标注', '弹窗', 'window', '热力图', '路径', '围栏', '视频'],
-    scenarios: ['覆盖物、标注、信息窗'],
+    officialFiles: [
+      'official_api_code_example/official-entity-coverings-spatial.md',
+      'official_api_code_example/official-entity-coverings-path.md',
+      'official_api_code_example/official-entity-coverings-effects.md',
+    ],
+    keywords: [
+      // 空间标注类
+      'poi', '覆盖物', '标注', '弹窗', 'window', '范围', 'range',
+      '文字', 'text3d', '实时视频', 'video', '自定义poi', 'custompoi',
+      '组', 'group', '层级', 'hierarchy', '项目实例', 'projectinstance',
+      '建模', 'modeler', 'fence', 'water', 'river', 'floor', 'embank',
+      // 路径运动类
+      '路径', 'path', '迁徙图', 'parabola', '粒子', 'particle',
+      // 数据可视化与特效类
+      '热力图', 'heatmap', '柱状热力图', 'columnarheatmap', 'spaceheatmap',
+      'roadheatmap', 'meshheatmap', '特效', 'effects', '灯光', 'light',
+      '可视域', 'viewshed', '栅格', 'raster', '高亮区域', 'highlightarea',
+      // 通用
+      '围栏', '视频',
+    ],
+    scenarios: [
+      '空间标注与交互覆盖物（POI/Window/Range/Text3D/Video）',
+      '路径与运动覆盖物（Path/Particle/Parabola）',
+      '数据可视化与特效覆盖物（HeatMap/Effects/Light/Viewshed）',
+    ],
   },
   {
     label: '图层模型Tiles',
