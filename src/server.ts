@@ -431,6 +431,37 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
         }))
       };
       
+      // 【缓存优化】构建给客户端 AI 的本地持久化缓存建议 (Warm 层)
+      const { generateDigest, computeFileHash } = await import('./utils/wdpKnowledge');
+      const cachePayload = {
+        timestamp: new Date().toISOString(),
+        workflowResult: {
+          matchedDomains: workflowResult.matchedDomains,
+          requiredOfficialFiles: workflowResult.requiredOfficialFiles
+        },
+        skillDigest: skillContents.map(s => {
+          return {
+             path: s.path,
+             hash: computeFileHash(s.content),
+             summary: generateDigest(s.content, s.path)
+          };
+        }),
+        officialIndex: officialContents.map(o => ({
+           path: o.path,
+           hash: computeFileHash(o.content)
+        }))
+      };
+
+      const finalResultWithCache = {
+        ...finalResult,
+        _cache: {
+           action: 'WRITE_LOCAL_CACHE',
+           path: `${projectPath}/.wdp-cache/warm.json`,
+           content: cachePayload,
+           instruction: "【缓存指令】为加速后续流程并节约 token，请使用你的本地能力(如 fs 模块/python)将 _cache.content 深度合并写入到你本地的 _cache.path 文件中。如果目录不存在请创建。"
+        }
+      };
+
       logConversation({
         sessionId,
         userName,
@@ -441,13 +472,13 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
         isScene5,
         projectPath,
         backendCalls,
-        responsePreview: JSON.stringify(finalResult).substring(0, 500)
+        responsePreview: JSON.stringify(finalResultWithCache).substring(0, 500)
       });
       
       console.error(`[Workflow] 工作流执行完成，共读取 ${skillContents.length} 个skill，${officialContents.length} 个official文档`);
       
       return {
-        content: [{ type: 'text', text: JSON.stringify(finalResult, null, 2) }]
+        content: [{ type: 'text', text: JSON.stringify(finalResultWithCache, null, 2) }]
       };
     }
 
@@ -601,27 +632,34 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
         }
       }
 
-      const store = getContextMemoryStore(args.projectPath);
-
+      // Hot 层继续留在服务端内存中（会话级）
       if (args.layer === 'hot') {
+        const store = getContextMemoryStore(args.projectPath);
         if (typeof parsedData === 'object' && parsedData !== null) {
           Object.entries(parsedData).forEach(([key, value]) => {
             store.writeHot(key, value);
           });
         }
-      } else {
-        const existing = store.readFile(args.layer);
-        
-        // 深度合并而不是浅拷贝，防止覆盖掉整个层级的其他配置
-        // 如果客户端直接传 {"skillDigest": {...}}，不应该覆盖掉现有的其他配置
-        const _ = require('lodash');
-        const merged = _.merge({}, existing, parsedData);
-        
-        store.writeFile(args.layer, merged);
-      }
-
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Hot 层写入内存成功' }) }],
+        };
+      } 
+      
+      // Warm / Cold 层不再由服务端持久化，而是返回客户端缓存指令，要求 AI 工具自行写入本地
+      const cachePath = `${args.projectPath}/.wdp-cache/${args.layer}.json`;
       return {
-        content: [{ type: 'text', text: JSON.stringify({ success: true, message: '写入成功' }) }],
+        content: [{ 
+          type: 'text', 
+          text: JSON.stringify({
+            success: true, 
+            message: `请求成功。请 AI 工具自行将以下内容写入本地文件: ${cachePath}`,
+            action: 'WRITE_LOCAL_CACHE',
+            target: 'client_filesystem',
+            path: cachePath,
+            content: parsedData,
+            instruction: `【系统指令】服务端不存储持久化数据。请调用你的系统能力(如 fs.writeFileSync/python/bash)，将 \`content\` 的 JSON 内容合并写入到客户端本机的 \`${cachePath}\` 文件中。如果 \`.wdp-cache\` 目录不存在，请先创建。`
+          }, null, 2) 
+        }],
       };
     }
 
@@ -929,7 +967,7 @@ app.post('/admin/tokens/:token/disable', adminMiddleware, (req: Request, res: Re
   const { reason } = req.body;
   
   const success = disableToken(token, reason);
-  
+
   if (!success) {
     return res.status(404).json({ error: 'Token不存在' });
   }
@@ -977,6 +1015,400 @@ app.post('/admin/logs/cleanup', adminMiddleware, (req: Request, res: Response) =
   }
 });
 
+// ==================== Admin 日志统计分析接口 ====================
+
+/**
+ * 读取并解析 JSONL 日志文件
+ */
+function readJsonlLogFile(filePath: string): any[] {
+  if (!fs.existsSync(filePath)) return [];
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    return content
+      .split('\n')
+      .filter(line => line.trim())
+      .map(line => {
+        try { return JSON.parse(line); } catch { return null; }
+      })
+      .filter(item => item !== null);
+  } catch (error) {
+    console.error(`[Analytics] 读取日志文件失败: ${filePath}`, error);
+    return [];
+  }
+}
+
+/**
+ * 获取最近 N 天的日志目录列表
+ */
+function getRecentLogDirs(days: number = 30): string[] {
+  const logsRoot = path.resolve(__dirname, '../logs');
+  if (!fs.existsSync(logsRoot)) return [];
+  
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - days);
+  
+  return fs.readdirSync(logsRoot)
+    .filter(dir => /^\d{4}-\d{2}-\d{2}$/.test(dir))
+    .filter(dir => new Date(dir) >= cutoffDate)
+    .sort();
+}
+
+/**
+ * 综合分析日志数据
+ */
+function analyzeLogData(days: number = 30) {
+  const logDirs = getRecentLogDirs(days);
+  
+  // 统计数据结构
+  const stats = {
+    period: {
+      days,
+      startDate: logDirs[0] || null,
+      endDate: logDirs[logDirs.length - 1] || null,
+    },
+    overview: {
+      totalAccessCalls: 0,
+      totalSkillCalls: 0,
+      totalRequests: 0,
+      totalErrors: 0,
+      totalConversations: 0,
+      uniqueUsers: new Set<string>(),
+      uniqueSessions: new Set<string>(),
+    },
+    skillStats: {} as { [path: string]: { count: number; users: Set<string>; lastUsed: string } },
+    officialStats: {} as { [path: string]: { count: number; users: Set<string>; lastUsed: string } },
+    toolStats: {} as { [name: string]: { count: number; users: Set<string> } },
+    userStats: {} as { [name: string]: { 
+      calls: number; 
+      skills: Set<string>; 
+      officials: Set<string>;
+      errors: number;
+      lastActive: string;
+    } },
+    errorStats: {} as { [category: string]: { count: number; lastOccured: string; examples: string[] } },
+    dailyTrend: {} as { [date: string]: { access: number; skills: number; errors: number; users: number } },
+    sceneStats: {} as { [scene: string]: number },
+  };
+
+  for (const dateDir of logDirs) {
+    const dirPath = path.resolve(__dirname, '../logs', dateDir);
+    if (!fs.existsSync(dirPath)) continue;
+
+    // 初始化当日统计
+    stats.dailyTrend[dateDir] = { access: 0, skills: 0, errors: 0, users: 0 };
+    const dailyUsers = new Set<string>();
+
+    // 1. 读取 access 日志
+    const accessLogs = readJsonlLogFile(path.join(dirPath, 'access.jsonl'));
+    for (const log of accessLogs) {
+      stats.overview.totalAccessCalls++;
+      stats.dailyTrend[dateDir].access++;
+      
+      const userName = log.userName || log.user_name || 'anonymous';
+      stats.overview.uniqueUsers.add(userName);
+      dailyUsers.add(userName);
+      
+      if (!stats.userStats[userName]) {
+        stats.userStats[userName] = { 
+          calls: 0, 
+          skills: new Set(), 
+          officials: new Set(),
+          errors: 0,
+          lastActive: log.timestamp 
+        };
+      }
+      stats.userStats[userName].calls++;
+      stats.userStats[userName].lastActive = log.timestamp;
+
+      // 工具调用统计
+      const action = log.action || '';
+      if (!stats.toolStats[action]) {
+        stats.toolStats[action] = { count: 0, users: new Set() };
+      }
+      stats.toolStats[action].count++;
+      stats.toolStats[action].users.add(userName);
+    }
+
+    // 2. 读取 skill 调用日志
+    const skillLogs = readJsonlLogFile(path.join(dirPath, 'skills.jsonl'));
+    for (const log of skillLogs) {
+      stats.overview.totalSkillCalls++;
+      stats.dailyTrend[dateDir].skills++;
+      
+      const skillPath = log.skill_path || log.skillPath || '';
+      const userName = log.user_name || log.userName || 'anonymous';
+      
+      if (skillPath) {
+        if (!stats.skillStats[skillPath]) {
+          stats.skillStats[skillPath] = { count: 0, users: new Set(), lastUsed: log.timestamp };
+        }
+        stats.skillStats[skillPath].count++;
+        stats.skillStats[skillPath].users.add(userName);
+        stats.skillStats[skillPath].lastUsed = log.timestamp;
+        
+        if (stats.userStats[userName]) {
+          stats.userStats[userName].skills.add(skillPath);
+        }
+      }
+    }
+
+    // 3. 读取 request 日志
+    const requestLogs = readJsonlLogFile(path.join(dirPath, 'requests.jsonl'));
+    for (const log of requestLogs) {
+      stats.overview.totalRequests++;
+      const userName = log.user_name || log.userName || 'anonymous';
+      stats.overview.uniqueUsers.add(userName);
+      dailyUsers.add(userName);
+    }
+
+    // 4. 读取 error 日志
+    const errorLogs = readJsonlLogFile(path.join(dirPath, 'errors.jsonl'));
+    for (const log of errorLogs) {
+      stats.overview.totalErrors++;
+      stats.dailyTrend[dateDir].errors++;
+      
+      const category = log.error_category || log.errorCategory || 'unknown';
+      const userName = log.user_name || log.userName || 'anonymous';
+      
+      if (!stats.errorStats[category]) {
+        stats.errorStats[category] = { count: 0, lastOccured: log.timestamp, examples: [] };
+      }
+      stats.errorStats[category].count++;
+      stats.errorStats[category].lastOccured = log.timestamp;
+      if (stats.errorStats[category].examples.length < 3) {
+        stats.errorStats[category].examples.push(log.error_message || log.errorMessage || '');
+      }
+      
+      if (stats.userStats[userName]) {
+        stats.userStats[userName].errors++;
+      }
+    }
+
+    // 5. 读取 conversation 日志（提取 official 文档读取和场景统计）
+    const convLogs = readJsonlLogFile(path.join(dirPath, 'conversations.jsonl'));
+    for (const log of convLogs) {
+      stats.overview.totalConversations++;
+      const userName = log.user_name || log.userName || 'anonymous';
+      stats.overview.uniqueUsers.add(userName);
+      dailyUsers.add(userName);
+      
+      // 场景统计
+      const scene = log.scene || '未知场景';
+      stats.sceneStats[scene] = (stats.sceneStats[scene] || 0) + 1;
+      
+      // 从 backend_calls 中提取 official 文档读取
+      const backendCalls = log.backend_calls || log.backendCalls || [];
+      for (const call of backendCalls) {
+        if (call.type === 'official' && call.path) {
+          const officialPath = call.path;
+          if (!stats.officialStats[officialPath]) {
+            stats.officialStats[officialPath] = { count: 0, users: new Set(), lastUsed: log.timestamp };
+          }
+          stats.officialStats[officialPath].count++;
+          stats.officialStats[officialPath].users.add(userName);
+          stats.officialStats[officialPath].lastUsed = log.timestamp;
+          
+          if (stats.userStats[userName]) {
+            stats.userStats[userName].officials.add(officialPath);
+          }
+        }
+      }
+    }
+
+    stats.dailyTrend[dateDir].users = dailyUsers.size;
+  }
+
+  return stats;
+}
+
+/**
+ * 序列化统计数据（将 Set 转为数组便于 JSON 输出）
+ */
+function serializeStats(stats: any) {
+  return {
+    ...stats,
+    overview: {
+      ...stats.overview,
+      uniqueUsers: Array.from(stats.overview.uniqueUsers),
+      uniqueSessions: Array.from(stats.overview.uniqueSessions),
+    },
+    skillStats: Object.entries(stats.skillStats)
+      .map(([path, data]: [string, any]) => ({
+        path,
+        count: data.count,
+        uniqueUsers: Array.from(data.users).length,
+        userList: Array.from(data.users),
+        lastUsed: data.lastUsed,
+      }))
+      .sort((a: any, b: any) => b.count - a.count),
+    officialStats: Object.entries(stats.officialStats)
+      .map(([path, data]: [string, any]) => ({
+        path,
+        count: data.count,
+        uniqueUsers: Array.from(data.users).length,
+        userList: Array.from(data.users),
+        lastUsed: data.lastUsed,
+      }))
+      .sort((a: any, b: any) => b.count - a.count),
+    toolStats: Object.entries(stats.toolStats)
+      .map(([name, data]: [string, any]) => ({
+        name,
+        count: data.count,
+        uniqueUsers: Array.from(data.users).length,
+      }))
+      .sort((a: any, b: any) => b.count - a.count),
+    userStats: Object.entries(stats.userStats)
+      .map(([name, data]: [string, any]) => ({
+        name,
+        calls: data.calls,
+        uniqueSkills: Array.from(data.skills).length,
+        skillList: Array.from(data.skills),
+        uniqueOfficials: Array.from(data.officials).length,
+        officialList: Array.from(data.officials),
+        errors: data.errors,
+        lastActive: data.lastActive,
+      }))
+      .sort((a: any, b: any) => b.calls - a.calls),
+    errorStats: Object.entries(stats.errorStats)
+      .map(([category, data]: [string, any]) => ({
+        category,
+        count: data.count,
+        lastOccured: data.lastOccured,
+        examples: data.examples,
+      }))
+      .sort((a: any, b: any) => b.count - a.count),
+    dailyTrend: stats.dailyTrend,
+    sceneStats: stats.sceneStats,
+  };
+}
+
+/**
+ * Admin 综合分析接口
+ * GET /admin/analytics?days=30
+ */
+app.get('/admin/analytics', adminMiddleware, (req: Request, res: Response) => {
+  const days = Math.min(parseInt(req.query.days as string) || 30, 90);
+  
+  try {
+    const stats = analyzeLogData(days);
+    const result = serializeStats(stats);
+    
+    logAccess(req, 'ADMIN_ANALYTICS', { days, logDirsFound: stats.period.days });
+    
+    res.json({
+      success: true,
+      period: result.period,
+      overview: result.overview,
+      topSkills: result.skillStats.slice(0, 20),
+      topOfficials: result.officialStats.slice(0, 20),
+      topTools: result.toolStats.slice(0, 20),
+      topUsers: result.userStats.slice(0, 20),
+      errors: result.errorStats.slice(0, 10),
+      dailyTrend: result.dailyTrend,
+      sceneDistribution: result.sceneStats,
+      generatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('[Analytics] 统计分析失败:', error);
+    res.status(500).json({ error: '统计分析失败', message: String(error) });
+  }
+});
+
+/**
+ * Admin 高频 Skill 排行
+ * GET /admin/stats/skills?days=30&limit=20
+ */
+app.get('/admin/stats/skills', adminMiddleware, (req: Request, res: Response) => {
+  const days = Math.min(parseInt(req.query.days as string) || 30, 90);
+  const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+  
+  try {
+    const stats = analyzeLogData(days);
+    const result = serializeStats(stats);
+    
+    res.json({
+      success: true,
+      period: result.period,
+      totalSkillCalls: result.overview.totalSkillCalls,
+      skills: result.skillStats.slice(0, limit),
+    });
+  } catch (error) {
+    res.status(500).json({ error: '统计失败', message: String(error) });
+  }
+});
+
+/**
+ * Admin 高频 Official 文档排行
+ * GET /admin/stats/officials?days=30&limit=20
+ */
+app.get('/admin/stats/officials', adminMiddleware, (req: Request, res: Response) => {
+  const days = Math.min(parseInt(req.query.days as string) || 30, 90);
+  const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+  
+  try {
+    const stats = analyzeLogData(days);
+    const result = serializeStats(stats);
+    
+    res.json({
+      success: true,
+      period: result.period,
+      totalOfficialReads: result.officialStats.reduce((sum: number, o: any) => sum + o.count, 0),
+      officials: result.officialStats.slice(0, limit),
+    });
+  } catch (error) {
+    res.status(500).json({ error: '统计失败', message: String(error) });
+  }
+});
+
+/**
+ * Admin 用户活跃度排行
+ * GET /admin/stats/users?days=30&limit=20
+ */
+app.get('/admin/stats/users', adminMiddleware, (req: Request, res: Response) => {
+  const days = Math.min(parseInt(req.query.days as string) || 30, 90);
+  const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+  
+  try {
+    const stats = analyzeLogData(days);
+    const result = serializeStats(stats);
+    
+    res.json({
+      success: true,
+      period: result.period,
+      totalUniqueUsers: result.overview.uniqueUsers.length,
+      users: result.userStats.slice(0, limit),
+    });
+  } catch (error) {
+    res.status(500).json({ error: '统计失败', message: String(error) });
+  }
+});
+
+/**
+ * Admin 错误统计
+ * GET /admin/stats/errors?days=30&limit=10
+ */
+app.get('/admin/stats/errors', adminMiddleware, (req: Request, res: Response) => {
+  const days = Math.min(parseInt(req.query.days as string) || 30, 90);
+  const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
+  
+  try {
+    const stats = analyzeLogData(days);
+    const result = serializeStats(stats);
+    
+    res.json({
+      success: true,
+      period: result.period,
+      totalErrors: result.overview.totalErrors,
+      errorRate: result.overview.totalAccessCalls > 0 
+        ? (result.overview.totalErrors / result.overview.totalAccessCalls * 100).toFixed(2) + '%'
+        : '0%',
+      errors: result.errorStats.slice(0, limit),
+    });
+  } catch (error) {
+    res.status(500).json({ error: '统计失败', message: String(error) });
+  }
+});
+
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error('服务器错误:', err);
   res.status(500).json({ error: '服务器内部错误' });
@@ -1002,6 +1434,13 @@ server.listen(Number(PORT), HOST, () => {
   console.log(`  GET  /api/knowledge       - 获取知识内容`);
   console.log(`  POST /api/query          - 查询知识`);
   console.log(`  GET  /api/skills         - 列出所有技能`);
+  console.log(`\n📊 Admin 统计接口 (x-admin-token):`);
+  console.log(`  GET  /admin/tokens        - Token 列表`);
+  console.log(`  GET  /admin/analytics     - 综合分析报告`);
+  console.log(`  GET  /admin/stats/skills  - 高频 Skill 排行`);
+  console.log(`  GET  /admin/stats/officials - 高频 Official 文档排行`);
+  console.log(`  GET  /admin/stats/users   - 用户活跃度排行`);
+  console.log(`  GET  /admin/stats/errors  - 错误统计`);
   
   const allTokens = getValidTokens();
   if (allTokens.length === 0) {

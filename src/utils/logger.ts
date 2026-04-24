@@ -398,8 +398,9 @@ function saveUserProfiles(): void {
       .slice(0, 10)
       .map(([tool]) => tool);
     
-    // 保存用户画像
-    const profileFile = path.join(analyticsDir, `${userName}-profile.json`);
+    // 保存用户画像（使用拼音化文件名避免跨平台编码问题）
+    const safeFileName = convertUserNameToDirName(userName) + '-profile.json';
+    const profileFile = path.join(analyticsDir, safeFileName);
     
     // 转换 Map 和 Set 为普通对象以便 JSON 序列化
     const serializedProfile = {
@@ -519,6 +520,7 @@ export function logSkillInvocation(data: {
     timestamp: new Date().toISOString(),
     type: 'skill_invocation',
     session_id: data.sessionId,
+    user_name: userName,
     skill_path: data.skillPath,
     tool_name: data.toolName,
     success: data.success,

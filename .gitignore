@@ -54,3 +54,10 @@ WDP-API-MCP-Deployment-Guide-local.md
 
 # Local git operation reminder (do not sync)
 .GIT_PUSH_REMINDER.md
+
+# Local analytics scripts & reports (LAN only, not for server deployment)
+scripts/analytics-report.js
+scripts/analyze-logs.js
+scripts/public-analytics.js
+LOG_ANALYTICS_PLAN.md
+汇报-*.md
