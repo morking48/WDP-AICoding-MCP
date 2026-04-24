@@ -587,15 +587,37 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
         };
       }
 
+      // 防御性解析：如果 data 是字符串（大模型格式化错误），尝试 parse
+      let parsedData = args.data;
+      if (typeof parsedData === 'string') {
+        try {
+          parsedData = JSON.parse(parsedData);
+        } catch (e) {
+          console.warn('[ContextMemory] write_context_state 解析 data 字符串失败:', e);
+          return {
+            content: [{ type: 'text', text: '错误: data 格式无效，必须是对象或合法 JSON 字符串' }],
+            isError: true,
+          };
+        }
+      }
+
       const store = getContextMemoryStore(args.projectPath);
 
       if (args.layer === 'hot') {
-        Object.entries(args.data).forEach(([key, value]) => {
-          store.writeHot(key, value);
-        });
+        if (typeof parsedData === 'object' && parsedData !== null) {
+          Object.entries(parsedData).forEach(([key, value]) => {
+            store.writeHot(key, value);
+          });
+        }
       } else {
         const existing = store.readFile(args.layer);
-        store.writeFile(args.layer, { ...existing, ...args.data });
+        
+        // 深度合并而不是浅拷贝，防止覆盖掉整个层级的其他配置
+        // 如果客户端直接传 {"skillDigest": {...}}，不应该覆盖掉现有的其他配置
+        const _ = require('lodash');
+        const merged = _.merge({}, existing, parsedData);
+        
+        store.writeFile(args.layer, merged);
       }
 
       return {

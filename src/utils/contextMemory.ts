@@ -198,11 +198,20 @@ export class ContextMemoryStore {
 // ========== 全局存储实例管理 ==========
 const contextMemoryStores = new Map<string, ContextMemoryStore>();
 
+function normalizeProjectPath(p: string): string {
+  if (!p) return '';
+  // 统一转为绝对路径，并将所有反斜杠转为正斜杠，末尾不要斜杠
+  return path.resolve(p).replace(/\\/g, '/').replace(/\/$/, '');
+}
+
 export function getContextMemoryStore(projectPath: string): ContextMemoryStore {
-  if (!contextMemoryStores.has(projectPath)) {
-    contextMemoryStores.set(projectPath, new ContextMemoryStore(projectPath));
+  const normPath = normalizeProjectPath(projectPath);
+  if (!normPath) throw new Error('[ContextMemory] projectPath 不能为空');
+  
+  if (!contextMemoryStores.has(normPath)) {
+    contextMemoryStores.set(normPath, new ContextMemoryStore(normPath));
   }
-  return contextMemoryStores.get(projectPath)!;
+  return contextMemoryStores.get(normPath)!;
 }
 
 export function cleanupContextMemory(projectPath: string) {
