@@ -4,22 +4,23 @@ import fs from 'fs';
 /**
  * Context Memory 存储层
  * 
- * 三层架构：
- * - Hot: 运行时状态（内存存储）
- * - Warm: 路由链路（文件存储，7天过期）
- * - Cold: 业务数据（文件存储，30天过期）
+ * 双层架构：
+ * - System: 路由链路与知识快照（服务端自动维护文件存储，7天过期）
+ * - Business: 业务逻辑记忆（AI大模型显式维护文件存储，30天过期）
  */
+
+export function getCacheFilePath(projectPath: string, filename: string): string {
+  return path.join(projectPath, '.wdp-cache', 'context-memory', filename);
+}
 
 export class ContextMemoryStore {
   private projectPath: string;
   private memoryDir: string;
-  private hotCache: Map<string, any>;
   private isStorageAllowed: boolean = false;
 
   constructor(projectPath: string) {
     this.projectPath = projectPath;
-    this.memoryDir = path.join(projectPath, '.wdp-cache', 'context-memory');
-    this.hotCache = new Map();
+    this.memoryDir = getCacheFilePath(projectPath, '');
     
     // 安全检查：如果是在公网服务器运行，禁止在系统关键目录下创建缓存
     this.isStorageAllowed = this.checkStoragePermission(projectPath);
@@ -28,7 +29,7 @@ export class ContextMemoryStore {
       this.ensureDir();
       this.cleanupExpiredFiles();
     } else {
-      console.warn(`[ContextMemory] 路径 ${projectPath} 被判定为非本地工程路径，持久化存储已禁用，仅启用内存 Hot 缓存。`);
+      console.warn(`[ContextMemory] 路径 ${projectPath} 被判定为非本地工程路径，持久化存储已禁用。`);
     }
   }
 
@@ -57,26 +58,44 @@ export class ContextMemoryStore {
     }
   }
 
-  // ========== Hot 层：内存存储 ==========
-  readHot(key: string): any {
-    return this.hotCache.get(key);
-  }
-
-  writeHot(key: string, value: any) {
-    this.hotCache.set(key, value);
-  }
-
-  clearHot() {
-    this.hotCache.clear();
-  }
-
-  getAllHot(): Record<string, any> {
-    return Object.fromEntries(this.hotCache);
-  }
-
-  // ========== Warm/Cold 层：文件存储 ==========
-  readFile(layer: 'warm' | 'cold'): any {
+  // ========== 业务记忆层 (Business) ==========
+  readBusinessMemory(): any {
     if (!this.isStorageAllowed) return {};
+    const filePath = path.join(this.memoryDir, 'business.json');
+    if (fs.existsSync(filePath)) {
+      this.updateAccessTime('business');
+      try {
+        return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      } catch (error) {
+        console.error(`[ContextMemory] 读取 business.json 失败:`, error);
+        return {};
+      }
+    }
+    return {};
+  }
+
+  writeBusinessMemory(data: any) {
+    if (!this.isStorageAllowed) return;
+    this.ensureDir();
+    const filePath = path.join(this.memoryDir, 'business.json');
+    try {
+      let existingData = {};
+      if (fs.existsSync(filePath)) {
+        existingData = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      }
+      // 深度合并（简单实现：Object.assign，如果要处理嵌套可引入 lodash/merge 等，此处用展开语法浅层合并对象顶层属性）
+      const newData = { ...existingData, ...data };
+      fs.writeFileSync(filePath, JSON.stringify(newData, null, 2), 'utf-8');
+      this.updateAccessTime('business');
+    } catch (error) {
+      console.error(`[ContextMemory] 写入 business.json 失败:`, error);
+    }
+  }
+
+  // ========== 系统层 (System) ==========
+  readFile(layer: 'system' | 'business'): any {
+    if (!this.isStorageAllowed) return {};
+    
     const filePath = path.join(this.memoryDir, `${layer}.json`);
     if (fs.existsSync(filePath)) {
       this.updateAccessTime(layer);
@@ -90,12 +109,13 @@ export class ContextMemoryStore {
     return {};
   }
 
-  writeFile(layer: 'warm' | 'cold', data: any) {
+  writeFile(layer: 'system' | 'business', data: any) {
     if (!this.isStorageAllowed) return;
-    this.ensureDir(); // 确保写入前目录存在，防止运行时被用户手动删除
+    this.ensureDir(); 
+    
     const filePath = path.join(this.memoryDir, `${layer}.json`);
     try {
-      fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+      fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
       this.updateAccessTime(layer);
     } catch (error) {
       console.error(`[ContextMemory] 写入 ${layer}.json 失败:`, error);
@@ -112,43 +132,30 @@ export class ContextMemoryStore {
       const now = Date.now();
       const DAY = 24 * 60 * 60 * 1000;
 
-      // Warm: 7天过期
-      if (meta.warmLastAccess && (now - meta.warmLastAccess) > 7 * DAY) {
-        const warmPath = path.join(this.memoryDir, 'warm.json');
-        if (fs.existsSync(warmPath)) {
-          fs.unlinkSync(warmPath);
-          console.log('[ContextMemory] Warm 层已过期清理');
+      // System: 7天过期
+      if (meta.systemLastAccess && (now - meta.systemLastAccess) > 7 * DAY) {
+        const sysPath = path.join(this.memoryDir, 'system.json');
+        if (fs.existsSync(sysPath)) {
+          fs.unlinkSync(sysPath);
+          console.log('[ContextMemory] System 层已过期清理');
         }
       }
 
-      // Cold: 30天过期
-      // 【优化】实现级联清理：业务数据过期意味着整个项目不再活跃，同步清理系统 Cache
-      if (meta.coldLastAccess && (now - meta.coldLastAccess) > 30 * DAY) {
-        const coldPath = path.join(this.memoryDir, 'cold.json');
-        if (fs.existsSync(coldPath)) {
-          fs.unlinkSync(coldPath);
-          console.log('[ContextMemory] Cold 层已过期清理');
+      // Business: 30天过期
+      if (meta.businessLastAccess && (now - meta.businessLastAccess) > 30 * DAY) {
+        const busPath = path.join(this.memoryDir, 'business.json');
+        if (fs.existsSync(busPath)) {
+          fs.unlinkSync(busPath);
+          console.log('[ContextMemory] Business 业务记忆层已过期清理');
         }
 
-        // 级联清理 Token Cache 目录中的相关文件 (如果存在)
-        const parentCacheDir = path.dirname(this.memoryDir);
-        const systemCacheFiles = ['skill-digest.json', 'official-docs-index.json'];
-        systemCacheFiles.forEach(f => {
-          const p = path.join(parentCacheDir, f);
-          if (fs.existsSync(p)) {
-            try {
-              fs.unlinkSync(p);
-              console.log(`[ContextMemory] 级联清理系统缓存: ${f}`);
-            } catch(e) {}
-          }
-        });
       }
     } catch (error) {
       console.error('[ContextMemory] 清理过期文件失败:', error);
     }
   }
 
-  private updateAccessTime(layer: 'warm' | 'cold') {
+  private updateAccessTime(layer: string) {
     if (!this.isStorageAllowed) return;
     this.ensureDir(); // 确保写入 meta 前目录存在
     const metaPath = path.join(this.memoryDir, 'meta.json');
@@ -169,27 +176,22 @@ export class ContextMemoryStore {
   }
 
   // ========== 手动清理 ==========
-  cleanup(layer: 'all' | 'hot' | 'warm' | 'cold') {
-    if (layer === 'all' || layer === 'hot') {
-      this.clearHot();
-      console.log('[ContextMemory] Hot 层已清理');
-    }
-
+  cleanup(layer: 'all' | 'system' | 'business') {
     if (!this.isStorageAllowed) return;
 
-    if (layer === 'all' || layer === 'warm') {
-      const warmPath = path.join(this.memoryDir, 'warm.json');
-      if (fs.existsSync(warmPath)) {
-        fs.unlinkSync(warmPath);
-        console.log('[ContextMemory] Warm 层已清理');
+    if (layer === 'all' || layer === 'system') {
+      const sysPath = path.join(this.memoryDir, 'system.json');
+      if (fs.existsSync(sysPath)) {
+        fs.unlinkSync(sysPath);
+        console.log('[ContextMemory] System 层已清理');
       }
     }
 
-    if (layer === 'all' || layer === 'cold') {
-      const coldPath = path.join(this.memoryDir, 'cold.json');
-      if (fs.existsSync(coldPath)) {
-        fs.unlinkSync(coldPath);
-        console.log('[ContextMemory] Cold 层已清理');
+    if (layer === 'all' || layer === 'business') {
+      const busPath = path.join(this.memoryDir, 'business.json');
+      if (fs.existsSync(busPath)) {
+        fs.unlinkSync(busPath);
+        console.log('[ContextMemory] Business 业务层已清理');
       }
     }
   }
@@ -217,16 +219,12 @@ export function getContextMemoryStore(projectPath: string): ContextMemoryStore {
 export function cleanupContextMemory(projectPath: string) {
   const store = contextMemoryStores.get(projectPath);
   if (store) {
-    store.clearHot();
     contextMemoryStores.delete(projectPath);
-    console.log(`[ContextMemory] 已清理: ${projectPath}`);
+    console.log(`[ContextMemory] 实例已注销: ${projectPath}`);
   }
 }
 
 export function cleanupAllContextMemory() {
-  contextMemoryStores.forEach((store, projectPath) => {
-    store.clearHot();
-    console.log(`[ContextMemory] 已清理: ${projectPath}`);
-  });
   contextMemoryStores.clear();
+  console.log(`[ContextMemory] 所有存储实例已注销`);
 }

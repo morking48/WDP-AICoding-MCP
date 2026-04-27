@@ -49,6 +49,10 @@ wdp-token-manager/
 # Skill update router (local development only)
 skill-update-router/
 
+# references (local only)
+reference/
+
+
 # Local deployment guide (contains sensitive local info)
 WDP-API-MCP-Deployment-Guide-local.md
 

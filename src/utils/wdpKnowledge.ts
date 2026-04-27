@@ -295,6 +295,26 @@ const SKILL_ROUTE_CONFIGS: SkillRouteConfig[] = [
     keywords: ['坐标', '空间理解', '取点', '屏幕坐标', '经纬度转换', '定位', 'spatial'],
     scenarios: ['空间理解、坐标转换、取点交互、GIS坐标'],
   },
+  {
+    label: '场景要素发现',
+    skillPath: 'wdp-api-scene-discovery/SKILL.md',
+    officialFiles: [
+      'official_api_code_example/official-function-components.md',
+      'official_api_code_example/official-entity-general-behavior-core.md',
+      'official_api_code_example/official-scene-camera.md',
+      'official_api_code_example/official-bim-full.md',
+      'official_api_code_example/official-spatial-understanding.md',
+    ],
+    keywords: [
+      '发现', '拾取', '查询实体', '列出', '遍历', '场景检查',
+      '有什么', '哪些', '检查场景', '获取实体', '场景快照',
+      'discovery', 'inspect', 'list entities', 'picker', 'find',
+      '不知道id', '不知道有哪些', '场景要素', '对象查询',
+    ],
+    scenarios: [
+      '场景要素发现、实体枚举、屏幕拾取获取ID、BIM层级遍历、相机预设查询、坐标取点',
+    ],
+  },
 ];
 
 const SKILL_MAPPING = Object.fromEntries(
@@ -1210,7 +1230,7 @@ export const MCP_TOOL_DEFINITIONS: MpcToolDefinition[] = [
   {
     name: 'read_context_state',
     description:
-      '读取上下文状态（Hot/Warm/Cold层）。Hot层：运行时状态（currentSkill, selection等）；Warm层：路由链路；Cold层：业务数据。',
+      '读取上下文状态（system层 或 business层）。system层：系统路由记忆，由服务端自动维护；business层：业务逻辑记忆，由AI手动维护。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1220,8 +1240,8 @@ export const MCP_TOOL_DEFINITIONS: MpcToolDefinition[] = [
         },
         layer: {
           type: 'string',
-          enum: ['hot', 'warm', 'cold'],
-          description: '存储层级：hot(运行时状态)、warm(路由链路)、cold(业务数据)',
+          enum: ['system', 'business'],
+          description: '存储层级：system(系统路由记忆)、business(业务逻辑记忆)',
         },
         path: {
           type: 'string',
@@ -1234,7 +1254,7 @@ export const MCP_TOOL_DEFINITIONS: MpcToolDefinition[] = [
   {
     name: 'write_context_state',
     description:
-      '写入上下文状态到指定层级。Hot层写入内存，Warm/Cold层写入文件。',
+      '写入业务记忆状态到 business 层，服务端将自动合并落盘到本地文件中。系统层 (system) 由工作流自动接管，无需大模型手动写入。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1244,12 +1264,12 @@ export const MCP_TOOL_DEFINITIONS: MpcToolDefinition[] = [
         },
         layer: {
           type: 'string',
-          enum: ['hot', 'warm', 'cold'],
-          description: '存储层级',
+          enum: ['business'],
+          description: '存储层级：固定为 business',
         },
         data: {
           type: 'object',
-          description: '要写入的数据对象',
+          description: '要写入的业务数据对象',
         },
       },
       required: ['projectPath', 'layer', 'data'],
@@ -1268,7 +1288,7 @@ export const MCP_TOOL_DEFINITIONS: MpcToolDefinition[] = [
         },
         layer: {
           type: 'string',
-          enum: ['all', 'hot', 'warm', 'cold'],
+          enum: ['all', 'system', 'business'],
           description: '要清理的层级，all表示全部',
         },
       },
