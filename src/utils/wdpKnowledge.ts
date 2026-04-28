@@ -1164,6 +1164,18 @@ export const MCP_TOOL_DEFINITIONS: MpcToolDefinition[] = [
           type: 'string',
           description: '【必需】工程路径，用于创建本地缓存。例如：D:/Projects/智慧园区',
         },
+        objectCategory: {
+          type: 'string',
+          description: '对象类别：Hierarchy/Path/Poi/Window/Particle/Effects/BIM构件/GIS要素/暂无/不涉及',
+        },
+        objectId: {
+          type: 'string',
+          description: '对象 Id：eid/entityName/customId/seedId/nodeId/featureId/暂无/不涉及',
+        },
+        coordinates: {
+          type: 'string',
+          description: '坐标参数，无则填"暂无"或"不涉及"',
+        },
       },
       required: ['user_requirement', 'projectPath'],
     },
@@ -1254,7 +1266,7 @@ export const MCP_TOOL_DEFINITIONS: MpcToolDefinition[] = [
   {
     name: 'write_context_state',
     description:
-      '写入业务记忆状态到 business 层，服务端将自动合并落盘到本地文件中。系统层 (system) 由工作流自动接管，无需大模型手动写入。',
+      '写入上下文记忆状态到指定层级。business 层用于业务关键参数（URL、Token、EID 等），由 AI 手动维护；system 层由工作流自动接管，通常无需手动写入。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1264,12 +1276,12 @@ export const MCP_TOOL_DEFINITIONS: MpcToolDefinition[] = [
         },
         layer: {
           type: 'string',
-          enum: ['business'],
-          description: '存储层级：固定为 business',
+          enum: ['business', 'system'],
+          description: '存储层级：business(业务逻辑记忆)、system(系统路由记忆)',
         },
         data: {
           type: 'object',
-          description: '要写入的业务数据对象',
+          description: '要写入的数据对象',
         },
       },
       required: ['projectPath', 'layer', 'data'],

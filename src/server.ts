@@ -311,7 +311,13 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
       const workflowResult = buildWorkflowResponse(userRequirement, projectPath);
 
       // 【关键修复】自动记录意图路由到 System 层，防止长对话后丢失原始规划
-      try {
+      // 如果代理客户端已标记跳过服务端写入，则全部跳过（防止服务器积累大量用户数据）
+      const skipServerMemory = args?._skipServerMemory === true;
+      if (skipServerMemory) {
+        console.error('[ContextMemory] 代理客户端已标记跳过服务端写入，所有缓存将在用户本地处理');
+      }
+      
+      if (!skipServerMemory) try {
         const store = getContextMemoryStore(projectPath);
         const currentRouting = {
           title: workflowResult.title,
@@ -453,13 +459,18 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
       };
 
       // 【优化】提取 _cache 机制，直接由服务端统一写入 system.json，大模型不再需要处理系统级缓存的落盘
+      // 【关键修复】必须合并到现有 system 层，不能覆盖 currentRouting/routingChain
+      // 【架构修复】代理模式下跳过服务端写入，防止服务器积累大量用户数据
       let cacheWriteSuccess = true;
-      try {
+      if (!skipServerMemory) try {
         const store = getContextMemoryStore(projectPath);
-        store.writeFile('system', cachePayload);
+        const existingSystem = store.readFile('system');
+        store.writeFile('system', { ...existingSystem, ...cachePayload });
       } catch (e) {
         console.error('[Workflow] 自动写入系统缓存失败:', e);
         cacheWriteSuccess = false;
+      } else {
+        console.error('[ContextMemory] 跳过服务端缓存写入（代理客户端已标记）');
       }
 
       const finalResultWithCache = {
@@ -640,15 +651,17 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
         }
       }
 
-      // 【优化】统一接管业务记忆层，不再向大模型返回写文件指令，直接由 Node 服务端落盘
+      // 【修复】实际写入数据到本地缓存，不再只读不写
       const store = getContextMemoryStore(args.projectPath);
       let result;
 
       if (args.layer === 'business') {
+        store.writeBusinessMemory(parsedData);        // ✅ 实际写入
         const data = store.readBusinessMemory();
         result = args.path ? get(data, args.path) : data;
       } else {
         // args.layer === 'system'
+        store.writeFile('system', parsedData);          // ✅ 实际写入
         const data = store.readFile('system');
         result = args.path ? get(data, args.path) : data;
       }

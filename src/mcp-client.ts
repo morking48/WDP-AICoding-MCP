@@ -40,6 +40,49 @@ import {
   listKnowledgeEntries,
   readKnowledgeFile,
 } from './utils/wdpKnowledge';
+import {
+  getContextMemoryStore,
+} from './utils/contextMemory';
+
+/**
+ * 简单的对象路径读取（替代 lodash.get）
+ */
+function getValue(obj: any, path: string): any {
+  if (!path) return obj;
+  const keys = path.split('.');
+  let result = obj;
+  for (const key of keys) {
+    if (result == null) return undefined;
+    result = result[key];
+  }
+  return result;
+}
+
+/**
+ * Context Memory 本地读写函数
+ */
+function readContextMemory(projectPath: string, layer: string, dataPath?: string) {
+  const store = getContextMemoryStore(projectPath);
+  const data = layer === 'business' ? store.readBusinessMemory() : store.readFile('system');
+  return dataPath ? getValue(data, dataPath) : data;
+}
+
+function writeContextMemory(projectPath: string, layer: string, newData: any) {
+  const store = getContextMemoryStore(projectPath);
+  if (layer === 'business') {
+    store.writeBusinessMemory(newData);
+    return store.readBusinessMemory();
+  } else {
+    store.writeFile('system', newData);
+    return store.readFile('system');
+  }
+}
+
+function cleanupContextMemoryLocal(projectPath: string, layer: 'all' | 'system' | 'business') {
+  const store = getContextMemoryStore(projectPath);
+  store.cleanup(layer);
+  return { success: true, message: '清理完成' };
+}
 
 // 敏感路径黑名单
 const SENSITIVE_PATHS = [
@@ -96,6 +139,7 @@ function createMCPServer(): Server {
   // 处理工具调用请求
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
+    const toolArgs = args as any; // 类型断言，便于访问动态参数
 
     try {
       switch (name) {
@@ -104,11 +148,13 @@ function createMCPServer(): Server {
             throw new Error('缺少 user_requirement 参数');
           }
 
+          const projectPath = typeof args.projectPath === 'string' ? args.projectPath : undefined;
+
           return {
             content: [
               {
                 type: 'text',
-                text: JSON.stringify(buildWorkflowResponse(args.user_requirement), null, 2)
+                text: JSON.stringify(buildWorkflowResponse(args.user_requirement, projectPath), null, 2)
               }
             ]
           };
@@ -217,6 +263,57 @@ function createMCPServer(): Server {
                 text: `服务状态: ${exists ? '正常' : '知识库路径不存在'}\n知识库路径: ${KNOWLEDGE_BASE_PATH}\n时间: ${new Date().toISOString()}`
               }
             ]
+          };
+        }
+
+        // ========== Context Memory 工具 ==========
+        case 'read_context_state': {
+          if (!toolArgs?.projectPath || !toolArgs?.layer) {
+            return {
+              content: [{ type: 'text', text: '错误: 缺少 projectPath 或 layer 参数' }],
+              isError: true,
+            };
+          }
+          const data = readContextMemory(toolArgs.projectPath, toolArgs.layer, toolArgs.path);
+          return {
+            content: [{ type: 'text', text: JSON.stringify(data ?? null, null, 2) }],
+          };
+        }
+
+        case 'write_context_state': {
+          if (!toolArgs?.projectPath || !toolArgs?.layer || !toolArgs?.data) {
+            return {
+              content: [{ type: 'text', text: '错误: 缺少必要参数' }],
+              isError: true,
+            };
+          }
+          // 防御性解析：如果 data 是字符串，尝试 parse
+          let parsedData = toolArgs.data;
+          if (typeof parsedData === 'string') {
+            try { parsedData = JSON.parse(parsedData); }
+            catch (e) {
+              return {
+                content: [{ type: 'text', text: '错误: data 格式无效，必须是对象或合法 JSON 字符串' }],
+                isError: true,
+              };
+            }
+          }
+          const result = writeContextMemory(toolArgs.projectPath, toolArgs.layer, parsedData);
+          return {
+            content: [{ type: 'text', text: JSON.stringify(result ?? null, null, 2) }],
+          };
+        }
+
+        case 'cleanup_context_memory': {
+          if (!toolArgs?.projectPath || !toolArgs?.layer) {
+            return {
+              content: [{ type: 'text', text: '错误: 缺少必要参数' }],
+              isError: true,
+            };
+          }
+          const result = cleanupContextMemoryLocal(toolArgs.projectPath, toolArgs.layer);
+          return {
+            content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
           };
         }
 

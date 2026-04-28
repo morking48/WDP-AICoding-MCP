@@ -51,7 +51,7 @@ skill-update-router/
 
 # references (local only)
 reference/
-
+temp/
 
 # Local deployment guide (contains sensitive local info)
 WDP-API-MCP-Deployment-Guide-local.md
