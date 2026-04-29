@@ -733,13 +733,6 @@ export function buildWorkflowResponse(userRequirement: string, projectPath?: str
   // 构建强制检查点
   const mandatoryCheckpoints: MandatoryCheckpoint[] = [
     {
-      name: 'project_scaffolding_check',
-      tool: 'enforce_project_scaffolding_valid',
-      trigger: '第一轮编码/生成基础框架前',
-      blockOnFailure: true,
-      params: { description: "验证当前项目目录是否存在 package.json 且依赖了 wdpapi。如果尝试使用 html <script> 引入而不使用前端构建工具，直接阻断代码生成。" }
-    },
-    {
       name: 'routing_check',
       tool: 'enforce_routing_check',
       trigger: '编码前',
@@ -847,6 +840,7 @@ export function buildWorkflowResponse(userRequirement: string, projectPath?: str
       'Sub skill 负责路由与能力说明，official-*.md 才是 API 方法名、参数名和代码示例的唯一真值。',
       '在命中 official 文档之前，不要根据通识经验猜测 WDP 方法名或参数名。',
       '如果场景涉及 BIM 或 GIS，请先确认 Plugin.Install 的安装链路。',
+      '【工程基线】请确保工程目录包含 package.json 且依赖了 wdpapi，禁止直接使用 <script> 标签引入。',
     ],
     nextAction:
       mode === 'ready'
