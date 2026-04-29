@@ -753,13 +753,6 @@ export function buildWorkflowResponse(userRequirement: string, projectPath?: str
       params: { required_files: requiredOfficialFiles },
     },
     {
-      name: 'context_memory_check',
-      tool: 'enforce_context_memory_check',
-      trigger: isLongTask ? '长任务编码前（必须）' : '对话>3轮时',
-      blockOnFailure: true,
-      params: { skills_count: matchedRoutes.length },
-    },
-    {
       name: 'object_ids_check',
       tool: 'enforce_object_ids_valid',
       trigger: '涉及对象操作时',
@@ -835,15 +828,6 @@ export function buildWorkflowResponse(userRequirement: string, projectPath?: str
       },
       {
         step: 5,
-        name: '状态管理配置',
-        action: '读取 wdp-context-memory 规范',
-        toolCalls: [
-          { tool: 'get_skill_content', path: 'wdp-context-memory/INTEGRATION_SPEC.md' },
-          { tool: 'get_skill_content', path: 'wdp-context-memory/MEMORY_SCHEMA.json' },
-        ],
-      },
-      {
-        step: 6,
         name: '代码生成门禁',
         action: '只有在已读取对应 official 文档、核心参数齐全时，才允许生成代码',
         requiredOfficialFiles,
