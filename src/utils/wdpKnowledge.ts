@@ -772,7 +772,11 @@ export function buildWorkflowResponse(userRequirement: string, projectPath?: str
     userRequirement,
     projectPath: projectPath || '未指定',
     matchedDomains: matchedRoutes.map((route) => route.label),
-    matchedSkills: matchedRoutes.map((route) => route.skillPath),
+    matchedSkills: [
+      'wdp-entry-agent/SKILL.md',
+      'wdp-intent-orchestrator/SKILL.md',
+      ...matchedRoutes.map((route) => route.skillPath),
+    ],
     requiredOfficialFiles,
     expandedQueries,
     missingRequiredParams,
@@ -780,19 +784,19 @@ export function buildWorkflowResponse(userRequirement: string, projectPath?: str
     canGenerateCode: mode === 'ready' && requiredOfficialFiles.length > 0,
     guidance:
       mode === 'ready'
-        ? `已命中 WDP 路由。【关键】编码前必须依次调用 mandatoryCheckpoints 中的检查工具。如果检查未通过，禁止生成代码。${workingDirectoryHint}`
-        : `当前仍需补充信息或读取 official 文档。未确认到真值前，不要自行编排 WDP 方法名和参数名。${workingDirectoryHint}`,
+        ? `【第一步·强制】请使用 get_skill_content 读取 wdp-entry-agent/SKILL.md 和 wdp-intent-orchestrator/SKILL.md，这两个是入口路由与需求解析手册，跳过将导致后续路由错误。${workingDirectoryHint}`
+        : `【第一步·强制】请使用 get_skill_content 读取 wdp-entry-agent/SKILL.md 和 wdp-intent-orchestrator/SKILL.md。${workingDirectoryHint}`,
     workflowSteps: [
       {
         step: 1,
         name: '入口路由判断',
-        action: '读取 wdp-entry-agent/SKILL.md',
+        action: '【第一步·强制】必须读取 wdp-entry-agent/SKILL.md，这是入口路由手册，跳过将导致后续路由错误',
         toolCall: { tool: 'get_skill_content', path: 'wdp-entry-agent/SKILL.md' },
       },
       {
         step: 2,
         name: '意图编排与需求分析',
-        action: '读取 wdp-intent-orchestrator/SKILL.md',
+        action: '【第二步·强制】必须读取 wdp-intent-orchestrator/SKILL.md，这是需求解析与编排手册，跳过将导致 API 误用',
         toolCall: { tool: 'get_skill_content', path: 'wdp-intent-orchestrator/SKILL.md' },
       },
       {
@@ -809,15 +813,14 @@ export function buildWorkflowResponse(userRequirement: string, projectPath?: str
       {
         step: 4,
         name: '技能路由与真值确认',
-        action: '根据命中的技能读取 sub skill，并继续读取 official 文档确认 API 真值（模板文件必须强制读取）',
-        skillMapping: SKILL_MAPPING,
-        matchedSkills: matchedRoutes.map((route) => ({
+        action: '根据命中的 top-3 技能读取 sub skill，并继续读取 official 文档确认 API 真值（模板文件必须强制读取）。注意：standard: true 标记的路径是明确匹配的优先级项。',
+        matchedSkills: matchedRoutes.slice(0, 3).map((route) => ({
           label: route.label,
           path: route.skillPath,
           officialFiles: route.officialFiles,
           matchedKeywords: route.matchedKeywords,
+          standard: true,
         })),
-        examples: SKILL_EXAMPLES,
       },
       {
         step: 5,

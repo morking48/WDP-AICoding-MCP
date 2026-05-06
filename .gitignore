@@ -60,6 +60,7 @@ WDP-API-MCP-Deployment-Guide-local.md
 .GIT_PUSH_REMINDER.md
 
 # Local analytics scripts & reports (LAN only, not for server deployment)
+skill-log-analytics/
 scripts/analytics-report.js
 scripts/analyze-logs.js
 scripts/public-analytics.js
