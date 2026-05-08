@@ -1193,6 +1193,10 @@ export const MCP_TOOL_DEFINITIONS: MpcToolDefinition[] = [
           type: 'string',
           description: '知识文件路径，例如 "wdp-entry-agent/SKILL.md" 或 "official_api_code_example/official-initialize-scene.md"。',
         },
+        force_full: {
+          type: 'boolean',
+          description: '是否强制返回完整文档内容。对于较长的 official 真值文档，如果不传此参数，默认只返回 API 签名摘要。若需获取嵌套结构或返回字段详细信息，请传 true。',
+        },
       },
       required: ['path'],
     },
