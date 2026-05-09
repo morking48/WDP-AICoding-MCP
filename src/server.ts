@@ -370,16 +370,16 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
       }
       
       const officialContents: any[] = [];
-      for (const officialPath of workflowResult.requiredOfficialFiles) {
+      for (const officialFile of workflowResult.requiredOfficialFiles) {
         try {
-          const content = readKnowledgeFile(KNOWLEDGE_BASE_PATH, officialPath);
+          const content = readKnowledgeFile(KNOWLEDGE_BASE_PATH, officialFile.path);
           if (content) {
-            officialContents.push({ path: officialPath, content: content.substring(0, 1000) + '...' });
-            backendCalls.push({ type: 'official', path: officialPath, status: 'success' });
-            console.error(`[Workflow] 已读取: ${officialPath}`);
+            officialContents.push({ path: officialFile.path, content: content.substring(0, 1000) + '...' });
+            backendCalls.push({ type: 'official', path: officialFile.path, status: 'success' });
+            console.error(`[Workflow] 已读取: ${officialFile.path}`);
           }
         } catch (error) {
-          backendCalls.push({ type: 'official', path: officialPath, status: 'error', error: String(error) });
+          backendCalls.push({ type: 'official', path: officialFile.path, status: 'error', error: String(error) });
         }
       }
       
