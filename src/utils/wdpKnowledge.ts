@@ -32,6 +32,12 @@ export interface MandatoryCheckpoint {
   params?: Record<string, unknown>;
 }
 
+export interface OfficialFileWithSummary {
+  path: string;
+  apiSummary: string;
+  mustRead: boolean;
+}
+
 export interface WorkflowResponse {
   success: true;
   title: string;
@@ -41,7 +47,7 @@ export interface WorkflowResponse {
   projectPath: string;
   matchedDomains: string[];
   matchedSkills: string[];
-  requiredOfficialFiles: string[];
+  requiredOfficialFiles: OfficialFileWithSummary[];
   expandedQueries: string[];
   missingRequiredParams: string[];
   clarifyingQuestions: string[];
@@ -96,6 +102,131 @@ interface MpcToolDefinition {
 
 const MAX_SEARCH_RESULTS = 12;
 const SEARCHABLE_EXTENSIONS = new Set(['.md', '.json', '.js', '.html']);
+
+// ============ 场景模板索引（启动时从 _index.json 动态加载） ============
+let SCENE_INDEX: Array<{
+  id: string; name: string; priority: number; goal: string;
+  keywords: string[]; synonyms: string[];
+  primary_skills: string[]; secondary_skills: string[];
+  file: string | null;
+}> = [];
+
+export function loadSceneIndex(knowledgeBasePath: string): void {
+  const indexPath = path.join(knowledgeBasePath,
+    'wdp-intent-orchestrator/resources/business-scenarios/_index.json');
+  try {
+    if (fs.existsSync(indexPath)) {
+      const data = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+      SCENE_INDEX = data.scenarios || [];
+      console.error(`[RouteEngine] 已加载 ${SCENE_INDEX.length} 个场景模板`);
+    } else {
+      console.error(`[RouteEngine] 场景索引文件不存在: ${indexPath}`);
+    }
+  } catch (error) {
+    console.error('[RouteEngine] 加载场景索引失败:', error);
+  }
+}
+
+// ============ 高频歧义消解规则 ============
+interface DisambiguationRule {
+  pattern: RegExp;
+  description: string;
+  targetSkill: string;
+}
+
+const DISAMBIGUATION_RULES: DisambiguationRule[] = [
+  { pattern: /画路径|绘制路径|创建路径/,    description: '覆盖物路径绘制',     targetSkill: 'wdp-api-coverings-unified' },
+  { pattern: /沿路径走|巡检(车)?行驶|路线回放|路径移动|漫游路径|轨迹回放/, description: '实体路径移动', targetSkill: 'wdp-api-entity-general-behavior' },
+  { pattern: /跟车|跟拍|跟随实体|第三人称|跟谁|追踪/, description: '相机跟随', targetSkill: 'wdp-api-camera-unified' },
+  { pattern: /点模型拿.*[Ii][Dd]|点底板单体|屏幕拾取/, description: '屏幕拾取', targetSkill: 'wdp-api-function-components' },
+  { pattern: /高亮构件|BIM高亮|楼层高亮|房间高亮/, description: 'BIM高亮', targetSkill: 'wdp-api-bim-unified' },
+  { pattern: /高亮.*GIS|GIS.*高亮|GIS要素高亮/, description: 'GIS高亮', targetSkill: 'gis-api-core-operations' },
+  { pattern: /离开.*清空|卸载清理|关闭页面|清理链路/, description: '清理链路（跨多个skill）', targetSkill: '__cleanup__' },
+];
+
+function applyDisambiguation(query: string): { resolvedSkill: string | null; description: string | null } {
+  const normalizedQuery = normalizeText(query);
+  for (const rule of DISAMBIGUATION_RULES) {
+    if (rule.pattern.test(normalizedQuery)) {
+      console.error(`[RouteEngine] 歧义消解命中: "${rule.description}" → ${rule.targetSkill}`);
+      return { resolvedSkill: rule.targetSkill, description: rule.description };
+    }
+  }
+  return { resolvedSkill: null, description: null };
+}
+
+// ============ 关键词权重表 ============
+const KEYWORD_WEIGHTS: Record<string, number> = {
+  'bim': 3, 'bim构件': 3, 'gis': 3, 'gis要素': 3, '图层': 2,
+  '相机': 2, '实体': 2, '事件': 2, '初始化': 3, '场景初始化': 3,
+  '空间理解': 2, '坐标转换': 2, 'bim模型操作': 3, 'gis核心操作': 3,
+  '事件注册': 2, '事件监听': 2, '材质': 2, '材质设置': 2,
+};
+
+function getKeywordWeight(keyword: string): number {
+  const normalized = normalizeText(keyword);
+  for (const [key, weight] of Object.entries(KEYWORD_WEIGHTS)) {
+    if (normalized.includes(normalizeText(key))) {
+      return weight;
+    }
+  }
+  return 1; // 未列入的关键词默认权重 = 1
+}
+
+// ============ 场景模板匹配 ============
+interface SceneMatchResult {
+  matchedSkills: string[];
+  skillOrder: string[];
+  sceneName: string;
+  sceneGoal: string;
+}
+
+function matchScene(query: string): SceneMatchResult | null {
+  if (SCENE_INDEX.length === 0) return null;
+
+  const normalizedQuery = normalizeText(query);
+  const hits: Array<{ index: number; score: number }> = [];
+
+  for (let i = 0; i < SCENE_INDEX.length; i++) {
+    const scene = SCENE_INDEX[i];
+    if (scene.id === 'other') continue; // 跳过兜底项
+
+    const allTerms = [...scene.keywords, ...scene.synonyms].map(t => normalizeText(t));
+    let hitCount = 0;
+    for (const term of allTerms) {
+      if (normalizedQuery.includes(term)) hitCount++;
+    }
+    if (hitCount > 0) {
+      hits.push({ index: i, score: hitCount });
+    }
+  }
+
+  if (hits.length === 0) return null;
+
+  // 按 priority 升序（数字小=优先），再按命中词数降序
+  hits.sort((a, b) => {
+    const pa = SCENE_INDEX[a.index].priority;
+    const pb = SCENE_INDEX[b.index].priority;
+    if (pa !== pb) return pa - pb;
+    return b.score - a.score;
+  });
+
+  const bestMatch = SCENE_INDEX[hits[0].index];
+  console.error(`[RouteEngine] 场景匹配命中: "${bestMatch.name}" (priority=${bestMatch.priority}, hitCount=${hits[0].score})`);
+
+  // 构建有序 skill 列表
+  const skillOrder = [
+    ...bestMatch.primary_skills,
+    ...bestMatch.secondary_skills,
+  ].map(name => `${name}/SKILL.md`);
+
+  return {
+    matchedSkills: skillOrder,
+    skillOrder,
+    sceneName: bestMatch.name,
+    sceneGoal: bestMatch.goal,
+  };
+}
 const DIRECT_CODE_SAFE_PATHS = new Set([
   'official_api_code_example/official-bim-full.md',
   'official_api_code_example/official-cluster.md',
@@ -493,6 +624,7 @@ function buildClarifyingQuestions(query: string, matchedRoutes: RouteMatch[], mi
 
   if (matchedRoutes.length === 0) {
     questions.push('这是 BIM、GIS、覆盖物、相机控制还是事件交互场景？请明确主域。');
+  // 新流程下场景命中 score=100，关键词加权分数也自然不同，此分支几乎不会触发，作为最后兜底
   } else if (matchedRoutes.length > 1 && matchedRoutes[0].score === matchedRoutes[1].score) {
     questions.push(`当前同时命中了 ${matchedRoutes[0].label} 和 ${matchedRoutes[1].label}，请确认主需求偏向哪一个。`);
   }
@@ -541,6 +673,58 @@ export function inferRouteMatches(query: string): RouteMatch[] {
   const lowerQuery = normalizeText(query);
   const expandedQueries = expandQuery(query).map((item) => normalizeText(item));
 
+  // ===== 新流程：歧义消解 → 场景匹配 → 关键词加权 =====
+
+  // 1. 歧义消解
+  const disambiguation = applyDisambiguation(query);
+  if (disambiguation.resolvedSkill && disambiguation.description) {
+    // 将歧义消解结果混入 expandedQueries 以提升命中
+    expandedQueries.push(normalizeText(disambiguation.description));
+  }
+
+  // 2. 场景模板匹配（优先于关键词匹配）
+  const sceneMatch = matchScene(query);
+  if (sceneMatch) {
+    // 场景命中 → 直接将场景的 skill 列表转换为 RouteMatch
+    const sceneRoutes: RouteMatch[] = [];
+    const matchedSkillSet = new Set(sceneMatch.matchedSkills);
+
+    for (const skillPath of sceneMatch.matchedSkills) {
+      // 从 SKILL_ROUTE_CONFIGS 中查找对应配置获取 officialFiles
+      const config = SKILL_ROUTE_CONFIGS.find(c => c.skillPath === skillPath);
+      if (config && !sceneRoutes.some(r => r.skillPath === skillPath)) {
+        sceneRoutes.push({
+          label: config.label,
+          skillPath: config.skillPath,
+          officialFiles: config.officialFiles,
+          score: 100, // 场景匹配固定高分，避免与关键词匹配平局
+          matchedKeywords: [`[场景模板: ${sceneMatch.sceneName}]`],
+        });
+      }
+    }
+
+    // 如果场景未覆盖某些 skill，但歧义消解命中了额外 skill，补充进去
+    if (disambiguation.resolvedSkill && !matchedSkillSet.has(`${disambiguation.resolvedSkill}/SKILL.md`)) {
+      const resolved = disambiguation.resolvedSkill; // TS 类型收窄
+      const disambigConfig = SKILL_ROUTE_CONFIGS.find(c => 
+        c.skillPath.startsWith(resolved));
+      if (disambigConfig) {
+        sceneRoutes.push({
+          label: disambigConfig.label,
+          skillPath: disambigConfig.skillPath,
+          officialFiles: disambigConfig.officialFiles,
+          score: 90,
+          matchedKeywords: [`[歧义消解: ${disambiguation.description}]`],
+        });
+      }
+    }
+
+    if (sceneRoutes.length > 0) {
+      return sceneRoutes;
+    }
+  }
+
+  // 3. 场景未命中 → 关键词加权兜底匹配
   return SKILL_ROUTE_CONFIGS
     .map((route) => {
       const matchedKeywords = unique([
@@ -548,11 +732,14 @@ export function inferRouteMatches(query: string): RouteMatch[] {
         ...expandedQueries.flatMap((expanded) => includesAny(expanded, route.keywords)),
       ]);
 
+      // 加权计分（替代等权计数）
+      const weightedScore = matchedKeywords.reduce((sum, kw) => sum + getKeywordWeight(kw), 0);
+
       return {
         label: route.label,
         skillPath: route.skillPath,
         officialFiles: route.officialFiles,
-        score: matchedKeywords.length,
+        score: weightedScore,
         matchedKeywords,
       };
     })
@@ -720,15 +907,86 @@ export function listKnowledgeEntries(
   return listDir(knowledgeBasePath);
 }
 
+/**
+ * 方案A：为 official 文件生成 API 签名摘要（复用 digestGenerator）
+ * 从文档代码块中提取关键 API 方法名和参数签名
+ */
+function generateOfficialSummary(filePath: string): string {
+  // 构建知识库路径（与 KNOWLEDGE_BASE_PATH 一致）
+  const kbPath = process.env.KNOWLEDGE_BASE_PATH
+    ? path.resolve(process.env.KNOWLEDGE_BASE_PATH)
+    : path.resolve(__dirname, '../../WDP_AIcoding/skills');
+  const content = readKnowledgeFile(kbPath, filePath);
+  if (!content) return '';
+
+  const digest = generateDigest(content, filePath);
+  if (digest.apis.length === 0) return '';
+
+  // 提取前5个核心 API 的签名
+  const topApis = digest.apis.slice(0, 5);
+  return topApis.map(api => {
+    const params = api.params.join(', ');
+    return `${api.name}(${params}) → ${api.returnType}`;
+  }).join(' | ');
+}
+
+/**
+ * 方案B+C：构建后果前置 + 内联门禁扫描的 guidance 文本
+ */
+function buildEnhancedGuidance(
+  mode: WorkflowMode,
+  officialFiles: OfficialFileWithSummary[],
+  matchedDomains: string[],
+  matchedSkillsCount: number,
+  projectPath?: string
+): string {
+  const workingDir = projectPath
+    ? `\n\n【⚠️ 强制工作目录约束】\n你的工程路径是: ${projectPath}\n所有文件操作（创建、修改、安装依赖）必须在此路径下进行！`
+
+    : '';
+
+  // 方案B：后果前置措辞
+  const consequenceBlock = `⚠️ 以下 3 种行为将导致代码 100% 不可用：
+ 1) 跳过读取 official 文档直接编造 WDP API 名称（方法名大小写、参数名与真值不匹配）
+ 2) 使用猜测的参数名而非 official 文档中的确切签名
+ 3) 不读 sub skill 就直接写代码（无法确认 API 调用顺序和前置条件）`;
+
+  // 方案C：内联门禁扫描结果
+  const officialListStr = officialFiles.length > 0
+    ? officialFiles.map(f => `  - ${f.path}${f.apiSummary ? `\n    📋 API签名: ${f.apiSummary}` : ''}`).join('\n')
+    : '  （无）';
+
+  const gateScanBlock = `
+📋 自动门禁扫描结果（无需你调用额外检查工具）：
+  ✅ routing_check: 路由已命中 ${matchedDomains.join(' + ')}，共 ${matchedDomains.length} 个域
+  ⏳ official_docs_check: 共需 ${officialFiles.length} 份 official 文档（API 签名摘要已提供，编码前必须逐一调用 get_skill_content 读取完整内容）
+  ⏳ memory_check: 长流程任务(${matchedSkillsCount}个skill)，系统层缓存已自动启用
+  ⏳ object_ids_check: 涉及对象操作时禁止使用 '123' 等假值，必须通过创建返回值/事件回调/实体查询获取真实 Id
+  ⏳ self_evaluation: 代码编写完成后必须调用 trigger_self_evaluation 进行底线 Review`;
+
+  return `${consequenceBlock}
+
+📋 必须读取的文档（共 ${officialFiles.length} 份）：
+${officialListStr}
+${gateScanBlock}
+${workingDir}`;
+}
+
 export function buildWorkflowResponse(userRequirement: string, projectPath?: string): WorkflowResponse {
   const expandedQueries = expandQuery(userRequirement);
   const matchedRoutes = inferRouteMatches(userRequirement);
   const missingRequiredParams = inferMissingParams(userRequirement);
-  const requiredOfficialFiles = unique(matchedRoutes.flatMap((route) => route.officialFiles));
+  const rawOfficialPaths = unique(matchedRoutes.flatMap((route) => route.officialFiles));
   const clarifyingQuestions = buildClarifyingQuestions(userRequirement, matchedRoutes, missingRequiredParams);
   const confidence = calculateConfidence(matchedRoutes);
   const mode: WorkflowMode = missingRequiredParams.length > 0 || confidence < 0.72 ? 'clarify' : 'ready';
-  const isLongTask = matchedRoutes.length > 1 || requiredOfficialFiles.length > 1;
+
+  // 方案A：为 official 文件生成带摘要的结构化对象
+  const requiredOfficialFiles: OfficialFileWithSummary[] = rawOfficialPaths.map(filePath => ({
+    path: filePath,
+    apiSummary: generateOfficialSummary(filePath),
+    mustRead: true,
+  }));
 
   // 构建强制检查点
   const mandatoryCheckpoints: MandatoryCheckpoint[] = [
@@ -743,7 +1001,7 @@ export function buildWorkflowResponse(userRequirement: string, projectPath?: str
       tool: 'enforce_official_docs_read',
       trigger: '编码前',
       blockOnFailure: true,
-      params: { required_files: requiredOfficialFiles },
+      params: { required_files: requiredOfficialFiles.map(f => f.path) },
     },
     {
       name: 'object_ids_check',
@@ -759,10 +1017,85 @@ export function buildWorkflowResponse(userRequirement: string, projectPath?: str
     },
   ];
 
-  // 【硬编码】强制工作目录声明
-  const workingDirectoryHint = projectPath 
-    ? `\n\n【⚠️ 强制工作目录约束】\n你的工程路径是: ${projectPath}\n所有文件操作（创建、修改、安装依赖）必须在此路径下进行！禁止在当前工作目录或其他位置创建文件。`
-    : '';
+  const matchedDomains = matchedRoutes.map((route) => route.label);
+  const matchedSkillPaths = [
+    'wdp-entry-agent/SKILL.md',
+    'wdp-intent-orchestrator/SKILL.md',
+    ...matchedRoutes.map((route) => route.skillPath),
+  ];
+
+  const enhancedGuidance = buildEnhancedGuidance(
+    mode,
+    requiredOfficialFiles,
+    matchedDomains,
+    matchedSkillPaths.length,
+    projectPath
+  );
+
+  // 方案D：workflowSteps 升级为门控链
+  const gatedSteps: Array<Record<string, unknown>> = [
+    {
+      step: 1,
+      name: '入口路由确认',
+      input: 'none',
+      action: '读取 wdp-entry-agent/SKILL.md',
+      expectedOutput: `已确认路由域：${matchedDomains[0] || '待确认'}`,
+      gate: `输出中必须包含以下至少一个域：BIM/GIS/覆盖物/相机/事件/实体/初始化（当前命中：${matchedDomains.join(', ')}）`,
+      toolCall: { tool: 'get_skill_content', path: 'wdp-entry-agent/SKILL.md' },
+    },
+    {
+      step: 2,
+      name: '官方 API 真值确认',
+      input: `step1的 {${matchedDomains[0] || 'domainName'}}`,
+      action: `读取 requiredOfficialFiles 中对应 official 文档（API 签名摘要已在上方提供，必须读取完整内容）`,
+      expectedOutput: '已确认 API 方法签名',
+      gate: '代码中出现的所有 WDP API 方法名必须能在上方 official 文档的 API 签名中找到对应签名，禁止编造或猜测',
+      requiredFiles: requiredOfficialFiles.map(f => ({ path: f.path, summary: f.apiSummary || '(摘要不可用，请读取完整文档)' })),
+    },
+    {
+      step: 3,
+      name: '架构设计报告',
+      input: 'step1 + step2 的结果',
+      action: '读取 wdp-intent-orchestrator/SKILL.md 并生成《系统意图与架构设计报告》',
+      expectedOutput: '输出《系统意图与架构设计报告》',
+      gate: '报告中必须包含：API调用链路 + 清理链路 + 缺失输入 三个章节',
+      toolCall: { tool: 'get_skill_content', path: 'wdp-intent-orchestrator/SKILL.md' },
+    },
+    {
+      step: 4,
+      name: '初始化基线确认',
+      input: 'step2 的 API 域',
+      action: '读取场景初始化与骨架模板',
+      expectedOutput: '已确认 wdpapi npm 包 + 工程结构',
+      gate: '代码骨架必须基于 universal-bootstrap.template 而非从头编写；必须使用 npm install wdpapi 而非 CDN script 标签',
+      toolCalls: [
+        { tool: 'get_skill_content', path: 'wdp-api-initialization-unified/SKILL.md' },
+        { tool: 'get_skill_content', path: 'official_api_code_example/universal-bootstrap.template.html' },
+        { tool: 'get_skill_content', path: 'official_api_code_example/universal-bootstrap.template.main.js' },
+      ],
+    },
+    {
+      step: 5,
+      name: '子技能阅读',
+      input: 'step1 的路由域结果',
+      action: '根据 matchedSkills 列表依次读取 sub skill',
+      expectedOutput: '已读取所有命中的 sub skill',
+      gate: '每读取一个 skill，确认理解其 API 用途、前置条件和调用顺序后再读下一个',
+      matchedSkills: matchedRoutes.slice(0, 3).map((route) => ({
+        label: route.label,
+        path: route.skillPath,
+        matchedKeywords: route.matchedKeywords,
+      })),
+    },
+    {
+      step: 6,
+      name: '代码生成 + 自我评估',
+      input: 'step1-5 的所有结果',
+      action: '生成代码并调用 trigger_self_evaluation',
+      expectedOutput: '代码 + 自评通过',
+      gate: '代码中不得包含 YOUR_URL/TODO/123 等占位符；所有 API 方法名必须来自 official 文档；必须包含清理链路',
+    },
+  ];
 
   return {
     success: true,
@@ -771,87 +1104,29 @@ export function buildWorkflowResponse(userRequirement: string, projectPath?: str
     confidence,
     userRequirement,
     projectPath: projectPath || '未指定',
-    matchedDomains: matchedRoutes.map((route) => route.label),
-    matchedSkills: [
-      'wdp-entry-agent/SKILL.md',
-      'wdp-intent-orchestrator/SKILL.md',
-      ...matchedRoutes.map((route) => route.skillPath),
-    ],
+    matchedDomains,
+    matchedSkills: matchedSkillPaths,
     requiredOfficialFiles,
     expandedQueries,
     missingRequiredParams,
     clarifyingQuestions,
     canGenerateCode: mode === 'ready' && requiredOfficialFiles.length > 0,
-    guidance:
-      mode === 'ready'
-        ? `【第一步·强制】请使用 get_skill_content 读取 wdp-entry-agent/SKILL.md 和 wdp-intent-orchestrator/SKILL.md，这两个是入口路由与需求解析手册，跳过将导致后续路由错误。${workingDirectoryHint}`
-        : `【第一步·强制】请使用 get_skill_content 读取 wdp-entry-agent/SKILL.md 和 wdp-intent-orchestrator/SKILL.md。${workingDirectoryHint}`,
-    workflowSteps: [
-      {
-        step: 1,
-        name: '入口路由判断',
-        action: '【第一步·强制】必须读取 wdp-entry-agent/SKILL.md，这是入口路由手册，跳过将导致后续路由错误',
-        toolCall: { tool: 'get_skill_content', path: 'wdp-entry-agent/SKILL.md' },
-      },
-      {
-        step: 2,
-        name: '意图编排与需求分析',
-        action: '【第二步·强制】必须读取 wdp-intent-orchestrator/SKILL.md，这是需求解析与编排手册，跳过将导致 API 误用',
-        toolCall: { tool: 'get_skill_content', path: 'wdp-intent-orchestrator/SKILL.md' },
-      },
-      {
-        step: 3,
-        name: '初始化基线',
-        action: '读取场景初始化与骨架模板',
-        toolCalls: [
-          { tool: 'get_skill_content', path: 'wdp-api-initialization-unified/SKILL.md' },
-          { tool: 'get_skill_content', path: 'official_api_code_example/universal-bootstrap.template.html' },
-          { tool: 'get_skill_content', path: 'official_api_code_example/universal-bootstrap.template.main.js' },
-          { tool: 'get_skill_content', path: 'official_api_code_example/universal-bootstrap.template.package.json' },
-        ],
-      },
-      {
-        step: 4,
-        name: '技能路由与真值确认',
-        action: '根据命中的 top-3 技能读取 sub skill，并继续读取 official 文档确认 API 真值（模板文件必须强制读取）。注意：standard: true 标记的路径是明确匹配的优先级项。',
-        matchedSkills: matchedRoutes.slice(0, 3).map((route) => ({
-          label: route.label,
-          path: route.skillPath,
-          officialFiles: route.officialFiles,
-          matchedKeywords: route.matchedKeywords,
-          standard: true,
-        })),
-      },
-      {
-        step: 5,
-        name: '代码生成门禁',
-        action: '只有在已读取对应 official 文档、核心参数齐全时，才允许生成代码',
-        requiredOfficialFiles,
-        checklist: [
-          '已确认 WDP 服务 URL，不使用占位符',
-          '已确认 Order 或验证口令',
-          '已读取命中的 official-*.md 文档',
-          '已读取所有相关的 universal-bootstrap.template 模板文件',
-          '已确认前端基于 package.json 进行工程化构建',
-          '已确认插件安装顺序在 Renderer.Start 之前',
-          '已准备开启与关闭两条清理路径',
-        ],
-      },
-    ],
+    guidance: enhancedGuidance,
+    workflowSteps: gatedSteps,
     importantNotes: [
-      '严禁使用 YOUR_URL 等假值，缺失时必须先追问用户。',
-      'Sub skill 负责路由与能力说明，official-*.md 才是 API 方法名、参数名和代码示例的唯一真值。',
-      '在命中 official 文档之前，不要根据通识经验猜测 WDP 方法名或参数名。',
-      '如果场景涉及 BIM 或 GIS，请先确认 Plugin.Install 的安装链路。',
-      '【工程基线】请确保工程目录包含 package.json 且依赖了 wdpapi，禁止直接使用 <script> 标签引入。',
+      '⚠️ 严禁使用 YOUR_URL 等假值，缺失时必须先追问用户。',
+      '⚠️ official-*.md 才是 API 方法名、参数名和代码示例的唯一真值，Sub skill 仅负责路由说明。',
+      '⚠️ 上方 API 签名摘要仅供快速参考，编码前必须调用 get_skill_content 读取完整 official 文档。',
+      '⚠️ 如果场景涉及 BIM 或 GIS，请先确认 Plugin.Install 的安装链路。',
+      '⚠️ 【工程基线】必须使用 npm install wdpapi，禁止直接使用 <script> 标签引入。',
     ],
     nextAction:
       mode === 'ready'
-        ? '请先读取命中的 official 文档，再生成代码。'
+        ? '按 gatedSteps 门控链顺序执行：先读 entry-agent → 再读 official 文档确认 API 真值 → 再读 orchestrator 生成报告 → 再编码。'
         : '请先向用户补充缺失信息，或缩小到明确的 WDP 技能域后再继续。',
     timestamp: new Date().toISOString(),
     mandatoryCheckpoints,
-    constraintViolationMessage: '约束检查未通过。请先完成 mandatoryCheckpoints 中的所有检查，再继续生成代码。',
+    constraintViolationMessage: '门禁检查未通过。请按 gatedSteps 顺序完成所有步骤后再生成代码。',
   };
 }
 

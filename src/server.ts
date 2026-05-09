@@ -41,6 +41,7 @@ import {
   enforceContextMemoryEnabled,
   enforceObjectIdsValid,
   enforceProjectScaffoldingValid,
+  loadSceneIndex,
 } from './utils/wdpKnowledge';
 import {
   getContextMemoryStore,
@@ -1430,6 +1431,9 @@ initLogger().then(() => {
 }).catch(err => {
   console.error('[Server] 日志系统初始化失败:', err);
 });
+
+// 启动时加载场景索引（用于路由引擎的场景模板匹配）
+loadSceneIndex(KNOWLEDGE_BASE_PATH);
 
 server.listen(Number(PORT), HOST, () => {
   console.log(`\n🚀 WDP 云端知识引擎已启动`);
