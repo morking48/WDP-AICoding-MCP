@@ -552,20 +552,30 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
       // 如果文件很大，且没有明确要求 force_full，优先只返回精简摘要，避免撑爆模型上下文。
       const isOfficialDoc = args.path.includes('official-');
       const isLargeFile = content.length > 5000;
-      const shouldReturnDigest = isOfficialDoc && isLargeFile && !args.force_full;
+      const forceFullRequested = args.force_full === true;
+      const shouldReturnDigest = isOfficialDoc && isLargeFile && !forceFullRequested;
 
       let returnContent = content;
       let guidanceHint = '';
+      const returnMode: 'full' | 'digest' = shouldReturnDigest ? 'digest' : 'full';
 
       if (shouldReturnDigest) {
         returnContent = digestToText(digest);
-        guidanceHint = '【系统提示】由于该官方文档过长，为节省上下文，本次仅返回核心 API 签名摘要。如果你需要某个 API 的详细完整代码示例，请使用参数 "force_full": true 重新调用本工具读取该文件。';
+        guidanceHint = '【摘要模式】该官方文档过长（' + content.length + ' 字符），为节省上下文已自动返回 API 签名摘要。'
+          + ' 本次请求中 force_full 参数为 false（未传递），如需完整代码示例，请重新调用本工具并设置 force_full: true。';
         console.error(`[Token Cache] 触发降级摘要返回: ${args.path}`);
       }
-      
-      // 注意：这里需要项目路径，但由于这个老工具原本不传 projectPath，
-      // 我们从 req 中的最近一次 session/状态里去尝试获取（如果可能），或直接利用前面遗留的长会话。
-      // 在这里仅记录日志，由 workflow 返回时的机制兜底。
+
+      const meta = {
+        fileSize: content.length,
+        isOfficialDoc,
+        isLargeFile,
+        forceFullRequested,
+        returnMode,
+        hint: returnMode === 'digest'
+          ? '当前返回的是摘要版本。如需完整内容，请使用 force_full: true 参数重新调用 get_skill_content 工具。'
+          : '当前返回的是完整文档内容。'
+      };
 
       return {
         content: [{ 
@@ -575,7 +585,8 @@ async function handleMcpToolCall(name: string, args: any, req: Request): Promise
             content: returnContent,
             fileHash: fileHash,
             path: args.path,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            _meta: meta
           }, null, 2)
         }]
       };
