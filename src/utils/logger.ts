@@ -582,28 +582,6 @@ export function logSessionEnd(sessionId: string, status: 'completed' | 'partial'
   sessionMap.delete(sessionId);
 }
 
-// ========== 场景识别 ==========
-
-const SCENE_KEYWORDS: Record<string, string[]> = {
-  '场景1-加载知识库': ['了解', '知识库', '机制', '入口', '开始'],
-  '场景2-需求大纲解析': ['解析', '需求文档', '大纲', '文档'],
-  '场景3-单个需求描述': ['实现', '功能', '需求描述'],
-  '场景4-开始编码': ['编码', '写代码', '开发', '实现'],
-  '场景5-问题修复': ['排查', '问题', '修复', '报错', '错误', '异常', '不生效', '失败', 'bug'],
-  '场景6-续接进度': ['继续', '续接', '恢复', '状态'],
-  '场景7-回到主线': ['回到主线', '主线', '返回'],
-};
-
-export function detectScene(input: string): { scene: string; isScene5: boolean } {
-  const lowerInput = input.toLowerCase();
-  for (const [scene, keywords] of Object.entries(SCENE_KEYWORDS)) {
-    if (keywords.some(keyword => lowerInput.includes(keyword.toLowerCase()))) {
-      return { scene, isScene5: scene === '场景5-问题修复' };
-    }
-  }
-  return { scene: '未知场景', isScene5: false };
-}
-
 // ========== 对话日志 ==========
 
 function extractCacheInfo(projectPath: string): any {

@@ -14,7 +14,6 @@ import {
   logError,
   logAccess,
   logConversation,
-  detectScene,
   cleanupOldLogs,
 } from './utils/logger';
 
@@ -148,14 +147,15 @@ app.post('/mcp/call', authMiddleware, async (req, res) => {
     }
 
     // 记录对话日志
-    const { scene, isScene5 } = detectScene(args?.user_requirement || '');
+    const userInput = (args?.user_requirement || tool) as string;
+    const isActMode = userInput.includes('开始编码') || userInput.includes('编码');
     logConversation({
       sessionId,
-      userInput: args?.user_requirement || tool,
+      userInput,
       toolName: tool,
       toolArgs: args || {},
-      scene,
-      isScene5,
+      scene: isActMode ? 'Act模式-开始编码' : 'Plan模式-分析查询',
+      isScene5: false,
       projectPath: args?.projectPath,
       responsePreview: JSON.stringify(result).substring(0, 500),
     });
