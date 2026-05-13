@@ -1,0 +1,197 @@
+﻿{
+  "metadata": {
+    "scenario_id": "fire-alert-incident",
+    "version": "3.0.0"
+  },
+  "id": "fire-alert-incident",
+  "name": "火情告警场景",
+  "keywords": [
+    "火情",
+    "火灾告警",
+    "火点识别",
+    "告警联动",
+    "火情演练"
+  ],
+  "synonyms": [
+    "火警",
+    "消防",
+    "烟雾报警",
+    "火灾报警",
+    "起火",
+    "明火"
+  ],
+  "priority": 20,
+  "goal": "围绕火点告警实现告警展示、联动定位、状态更新和处置反馈。",
+  "task_breakdown": [
+    "创建火点、告警标注或特效",
+    "注册点击或告警事件",
+    "联动高亮、聚焦、窗口或资源展示",
+    "更新告警状态",
+    "补充告警解除和清理链路"
+  ],
+  "primary_skills": [
+    "reference/scene/covering/poi/SKILL.md",
+    "reference/renderer/SKILL.md"
+  ],
+  "secondary_skills": [
+    "reference/camera/camera-control/SKILL.md",
+    "reference/data-model/material/SKILL.md"
+  ],
+  "required_clarifications": [
+    "火点来源是静态数据、实时事件还是人工点击",
+    "需要高亮的是实体、底板单体、BIM 构件还是 GIS 要素",
+    "是否要联动视频或信息窗",
+    "告警关闭后的清理动作"
+  ],
+  "modules": [
+    {
+      "name": "火情特效模块",
+      "wdp_apis": [
+        "new App.Particle()",
+        "App.Scene.Add",
+        "App.Scene.Update"
+      ],
+      "purpose": "创建并更新火情特效，默认 particleType=flame"
+    },
+    {
+      "name": "告警POI模块",
+      "wdp_apis": [
+        "new App.Poi()",
+        "App.Scene.Add",
+        "App.Scene.Update"
+      ],
+      "purpose": "创建火情告警点位并承载交互入口"
+    },
+    {
+      "name": "3D文字标注模块",
+      "wdp_apis": [
+        "new App.Text3D()",
+        "App.Scene.Add",
+        "App.Scene.Update"
+      ],
+      "purpose": "展示火情等级、状态与处置信息"
+    },
+    {
+      "name": "视频监控窗口模块",
+      "wdp_apis": [
+        "new App.Window()",
+        "App.Scene.Add",
+        "App.Scene.Update"
+      ],
+      "purpose": "告警触发时展示现场视频监控窗口"
+    },
+    {
+      "name": "镜头聚焦模块",
+      "wdp_apis": [
+        "App.CameraControl.Focus",
+        "App.CameraControl.SetCameraPose"
+      ],
+      "purpose": "对火情点位进行相机聚焦与失败降级"
+    },
+    {
+      "name": "事件联动模块",
+      "wdp_apis": [
+        "App.Renderer.RegisterSceneEvent",
+        "OnWdpSceneIsReady",
+        "OnEntityClicked"
+      ],
+      "purpose": "场景就绪门禁与告警对象点击联动"
+    }
+  ],
+  "api_flow": [
+    {
+      "step": 1,
+      "description": "等待场景就绪后再执行业务链路",
+      "api": "App.Renderer.RegisterSceneEvent",
+      "params": {
+        "events": ["OnWdpSceneIsReady"]
+      }
+    },
+    {
+      "step": 2,
+      "description": "创建火情特效与告警点位",
+      "api": "App.Scene.Add",
+      "params": {
+        "entities": [
+          "new App.Particle()",
+          "new App.Poi()"
+        ],
+        "particleStyle": {
+          "particleType": "flame"
+        }
+      }
+    },
+    {
+      "step": 3,
+      "description": "创建3D文字展示火情等级与状态",
+      "api": "App.Scene.Add",
+      "params": {
+        "entity": "new App.Text3D()"
+      }
+    },
+    {
+      "step": 4,
+      "description": "注册告警对象点击联动事件",
+      "api": "App.Renderer.RegisterSceneEvent",
+      "params": {
+        "events": ["OnEntityClicked"]
+      }
+    },
+    {
+      "step": 5,
+      "description": "点击后创建视频窗口",
+      "api": "App.Scene.Add",
+      "params": {
+        "entity": "new App.Window()"
+      }
+    },
+    {
+      "step": 6,
+      "description": "点击后相机聚焦到火情点位",
+      "api": "App.CameraControl.Focus",
+      "params": {
+        "fallback": "App.CameraControl.SetCameraPose"
+      }
+    },
+    {
+      "step": 7,
+      "description": "更新火情状态与可视化标识",
+      "api": "App.Scene.Update",
+      "params": {
+        "target": "particle/poi/text3d/window"
+      }
+    }
+  ],
+  "data_flow": [
+    {
+      "step": "OnWdpSceneIsReady 回调",
+      "output": "result.progress === 100",
+      "usage": "场景就绪门禁，确保后续API可执行"
+    },
+    {
+      "step": "OnEntityClicked 回调",
+      "output": "result.object.customId, result.object.location",
+      "usage": "用于聚焦相机和创建窗口"
+    }
+  ],
+  "cleanup_chain": [
+    {"create": "App.Scene.Add(Particle)", "cleanup": "particleObj.Delete()"},
+    {"create": "App.Scene.Add(Poi)", "cleanup": "poiObj.Delete()"},
+    {"create": "App.Scene.Add(Text3D)", "cleanup": "text3dObj.Delete()"},
+    {"create": "App.Scene.Add(Window)", "cleanup": "windowObj.Delete()"},
+    {"create": "RegisterSceneEvent", "cleanup": "UnregisterSceneEvent"}
+  ],
+  "pattern": {
+    "type": "fire-alert-response",
+    "architecture": "event-driven-emergency-command",
+    "data_flow": "realtime-alert-linked-visualization",
+    "recommended_patterns": ["wdp-poi-window-interaction"],
+    "key_features": [
+      "火情特效（flame）",
+      "告警POI点击联动",
+      "3D文字状态提示",
+      "视频监控窗口联动",
+      "相机聚焦与降级"
+    ]
+  }
+}

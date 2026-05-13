@@ -26,7 +26,12 @@ description: WDP 意图编排与需求精确化。用于在编码前把自然语
 
 ### Step 1: 意图编排
 
-调用 `start_wdp_workflow` 工具，MCP 已自动完成路由匹配。你收到的 `matched_skills` 已经是场景命中的结果。
+调用 `start_wdp_workflow`，MCP 已自动完成：
+- 场景模板匹配（基于 `config/business-scenarios/`）
+- 关键词路由（基于 `config/skill-route-mapping.json`）
+- API 调用模式匹配（基于 `config/api-patterns.json`）
+
+你收到的 `matched_skills` + `scene` + `api_patterns` 已经是综合命中结果。
 
 ### Step 2: 初始化
 
@@ -41,9 +46,17 @@ description: WDP 意图编排与需求精确化。用于在编码前把自然语
 
 **Plugin.Install 必须在 Renderer.Start 之前执行。**
 
-### Step 4: 按需读取功能 Skill
+### Step 4: 按需读取功能 + 场景 Skill
 
-根据 `matched_skills` 中的路径，按需读取对应 Skill 文件。
+根据 `matched_skills` 中的路径，按需读取所有 Skill 文件（含场景匹配的额外 Skill）。
+
+### Step 5: 引用 API 调用模式（如有）
+
+如果返回结果中有 `api_patterns`，直接参考其中的 `api_sequence` + `data_flow` + `notes` 生成代码。
+
+### 🚨 Step 6: 防幻觉强制校验
+
+生成代码前必须调用 `enforce_routing_check`，未通过前禁止生成代码。所有 API 签名以 Skill 文件为准。
 
 ## 统一基线
 

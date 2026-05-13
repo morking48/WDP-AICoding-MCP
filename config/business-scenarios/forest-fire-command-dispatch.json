@@ -1,0 +1,287 @@
+﻿{
+  "metadata": {
+    "scenario_id": "forest-fire-command-dispatch",
+    "version": "3.0.0"
+  },
+  "id": "forest-fire-command-dispatch",
+  "name": "森林防火扑救指挥场景",
+  "keywords": [
+    "森林防火",
+    "扑救指挥",
+    "林火",
+    "火点",
+    "扑火队伍",
+    "灭火路径"
+  ],
+  "synonyms": [
+    "森林消防",
+    "山火扑救",
+    "林火指挥",
+    "灭火调度",
+    "防火指挥"
+  ],
+  "priority": 10,
+  "goal": "围绕火点、危险范围、扑救队伍和行动路径做联动展示。",
+  "task_breakdown": [
+    "创建火点和危险范围对象",
+    "创建队伍或车辆对象",
+    "创建行动路径并驱动运动",
+    "按点击或事件联动聚焦和窗口",
+    "补充停止、回退和清理链路"
+  ],
+  "primary_skills": [
+    "reference/scene/covering/poi/SKILL.md",
+    "reference/scene/covering/bound/SKILL.md"
+  ],
+  "secondary_skills": [
+    "reference/camera/camera-control/SKILL.md",
+    "reference/renderer/SKILL.md"
+  ],
+  "required_clarifications": [
+    "火点、范围和队伍各自的数据来源",
+    "是否需要多队伍并发运动",
+    "是否需要时间推进或回放",
+    "联动窗口和事件监听的清理方式"
+  ],
+  "modules": [
+    {
+      "name": "火点特效模块",
+      "wdp_apis": [
+        "new App.Particle()",
+        "App.Scene.Add",
+        "App.Scene.Update"
+      ],
+      "purpose": "创建火点特效并支持点击/自动触发"
+    },
+    {
+      "name": "危险范围模块",
+      "wdp_apis": [
+        "new App.Range()",
+        "App.Scene.Add",
+        "App.Scene.Update"
+      ],
+      "purpose": "展示火场态势范围与风险圈层"
+    },
+    {
+      "name": "队伍POI模块",
+      "wdp_apis": [
+        "new App.Poi()",
+        "App.Scene.Add",
+        "App.Scene.Update"
+      ],
+      "purpose": "按小组与车辆装备展示扑救队伍位置"
+    },
+    {
+      "name": "行动路径模块",
+      "wdp_apis": [
+        "new App.Path()",
+        "App.Scene.Add",
+        "App.Scene.Update"
+      ],
+      "purpose": "标记各扑救小组行动路径"
+    },
+    {
+      "name": "路径回放与移动模块",
+      "wdp_apis": [
+        "new App.Bound()",
+        "App.Scene.Add",
+        "App.Scene.Update"
+      ],
+      "purpose": "队伍沿路径移动并支持时间推进回放"
+    },
+    {
+      "name": "镜头聚焦模块",
+      "wdp_apis": [
+        "App.CameraControl.Focus",
+        "App.CameraControl.SetCameraPose"
+      ],
+      "purpose": "点击或异常时聚焦火点/队伍，失败降级 SetCameraPose"
+    },
+    {
+      "name": "事件联动模块",
+      "wdp_apis": [
+        "App.Renderer.RegisterSceneEvent",
+        "OnWdpSceneIsReady",
+        "OnEntityClicked"
+      ],
+      "purpose": "场景就绪门禁、点击触发与自动告警触发联动"
+    }
+  ],
+  "api_flow": [
+    {
+      "step": 1,
+      "description": "创建火点和危险范围对象",
+      "api": "App.Scene.Creates",
+      "params": {
+        "entities": [
+          {
+            "type": "Poi",
+            "location": "[116.4074, 39.9042, 50]",
+            "poiStyle": {
+              "markerNormalUrl": "fire_icon.png",
+              "text": "火点"
+            },
+            "customId": "fire_point_1"
+          },
+          {
+            "type": "Range",
+            "polygon": {
+              "coordinates": "[[116.407, 39.904], [116.408, 39.904], ...]"
+            },
+            "rangeStyle": {
+              "fillColor": "rgba(255, 0, 0, 0.2)",
+              "outlineColor": "#ff0000",
+              "height": 100
+            },
+            "customId": "danger_zone_1"
+          }
+        ]
+      }
+    },
+    {
+      "step": 2,
+      "description": "创建扑火队伍粒子实体",
+      "api": "App.Scene.Creates",
+      "params": {
+        "entities": [
+          {
+            "type": "Particle",
+            "location": "[116.400, 39.900, 0]",
+            "particleType": "vehicle_fire_truck",
+            "particleStyle": {
+              "scale": 1.2
+            },
+            "customId": "fire_team_1"
+          }
+        ]
+      }
+    },
+    {
+      "step": 3,
+      "description": "创建灭火行动路径",
+      "api": "App.Scene.Creates",
+      "params": {
+        "entities": [
+          {
+            "type": "Path",
+            "polyline": {
+              "coordinates": "[[116.400, 39.900, 0], [116.4074, 39.9042, 0]]"
+            },
+            "pathStyle": {
+              "type": "arrow",
+              "lineColor": "#ff6600",
+              "lineWidth": 4
+            },
+            "customId": "action_path_1"
+          }
+        ]
+      }
+    },
+    {
+      "step": 4,
+      "description": "绑定队伍到行动路径",
+      "api": "App.Scene.Add",
+      "params": {
+        "entity": "new App.Bound()",
+        "config": {
+          "moving": "${fireTeamParticle}",
+          "path": "${actionPath}",
+          "boundStyle": {
+            "time": 60,
+            "bLoop": false,
+            "speed": 1.5
+          },
+          "customId": "team_bound_1"
+        }
+      }
+    },
+    {
+      "step": 5,
+      "description": "聚焦到火点位置",
+      "api": "App.CameraControl.FocusByLocation",
+      "params": {
+        "location": "[116.4074, 39.9042, 50]",
+        "duration": 1000,
+        "pitch": -60,
+        "yaw": 0
+      }
+    },
+    {
+      "step": 6,
+      "description": "创建指挥信息窗口",
+      "api": "App.Scene.Add",
+      "params": {
+        "entity": "new App.Window()",
+        "config": {
+          "location": "[116.4074, 39.9042, 50]",
+          "windowStyle": {
+            "url": "command_dashboard.html?fireId=fire_1",
+            "size": "[400, 500]",
+            "offset": "[0, 2]"
+          },
+          "customId": "command_window_1"
+        }
+      }
+    },
+    {
+      "step": 7,
+      "description": "注册队伍到达事件",
+      "api": "App.Renderer.RegisterSceneEvent",
+      "params": {
+        "events": [
+          {
+            "name": "OnBoundMoveEnd",
+            "func": "async (ev) => { if(ev.result.customId.startsWith('team_bound')) { /* 队伍到达，更新状态 */ } }"
+          }
+        ]
+      }
+    },
+    {
+      "step": 8,
+      "description": "更新火点状态标注",
+      "api": "App.Scene.Update",
+      "params": {
+        "customId": "fire_point_1",
+        "updateData": {
+          "poiStyle": {
+            "markerNormalUrl": "fire_controlled_icon.png",
+            "text": "火点 (扑救中)"
+          }
+        }
+      }
+    }
+  ],
+  "data_flow": [
+    {
+      "step": "App.Scene.Creates",
+      "output": "result.objects（含 eid, customId, location）",
+      "usage": "缓存用于清理和后续更新"
+    },
+    {
+      "step": "OnBoundMoveEnd 回调",
+      "output": "result.customId",
+      "usage": "用于判断队伍到达，触发状态更新"
+    }
+  ],
+  "cleanup_chain": [
+    {"create": "App.Scene.Creates(POI/Range)", "cleanup": "Delete(customId)"},
+    {"create": "App.Scene.Creates(Particle)", "cleanup": "particleObj.Delete()"},
+    {"create": "App.Scene.Add(Bound)", "cleanup": "boundObj.Delete()"},
+    {"create": "App.Scene.Add(Window)", "cleanup": "windowObj.Delete()"},
+    {"create": "RegisterSceneEvent", "cleanup": "UnregisterSceneEvent"}
+  ],
+  "pattern": {
+    "type": "command-control",
+    "architecture": "real-time-3d-visualization",
+    "data_flow": "event-driven-spatial",
+    "recommended_patterns": ["wdp-path-roam-animation", "wdp-poi-window-interaction"],
+    "key_features": [
+      "3D态势可视化",
+      "实时资源调度",
+      "路径动画展示",
+      "事件状态追踪",
+      "空间范围标注",
+      "相机智能聚焦"
+    ]
+  }
+}

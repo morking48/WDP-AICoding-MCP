@@ -1,0 +1,210 @@
+﻿{
+  "metadata": {
+    "scenario_id": "scenic-shuttle-monitoring",
+    "version": "3.0.0"
+  },
+  "id": "scenic-shuttle-monitoring",
+  "name": "景区接驳车监控场景",
+  "keywords": [
+    "接驳车",
+    "景区班车",
+    "车辆监控",
+    "车辆轨迹",
+    "车载视频",
+    "跟车"
+  ],
+  "synonyms": [
+    "运力调度",
+    "班车管理",
+    "公交运行",
+    "线路监控",
+    "运营态势",
+    "交通运力"
+  ],
+  "priority": 10,
+  "goal": "展示车辆运行、轨迹回放、点击联动车辆信息和视频窗口。",
+  "task_breakdown": [
+    "确认线路路径和车辆对象",
+    "驱动车辆沿路径运动",
+    "注册车辆点击事件",
+    "联动车辆窗口、视频和相机",
+    "补充停止回放和清理链路"
+  ],
+  "primary_skills": [
+    "reference/scene/covering/bound/SKILL.md"
+  ],
+  "secondary_skills": [
+    "reference/scene/covering/poi/SKILL.md",
+    "reference/camera/camera-control/SKILL.md",
+    "reference/renderer/SKILL.md"
+  ],
+  "required_clarifications": [
+    "车辆对象类别和对象 Id 来源",
+    "轨迹是新建还是已有",
+    "是否需要相机跟随",
+    "视频窗口和回放停止后的清理方式"
+  ],
+  "modules": [
+    {
+      "name": "线路态势模块",
+      "wdp_apis": [
+        "new App.Path()",
+        "App.Scene.Add",
+        "App.Scene.Update"
+      ],
+      "purpose": "按线路维度展示接驳线路与运行状态"
+    },
+    {
+      "name": "车辆运行模块",
+      "wdp_apis": [
+        "new App.Particle()",
+        "new App.Poi()",
+        "App.Scene.Add",
+        "App.Scene.Update"
+      ],
+      "purpose": "按车辆维度展示位置、状态与运力"
+    },
+    {
+      "name": "轨迹回放模块",
+      "wdp_apis": [
+        "new App.Bound()",
+        "App.Scene.Add",
+        "App.Scene.Update"
+      ],
+      "purpose": "班车运行轨迹回放与进度控制"
+    },
+    {
+      "name": "视频联动模块",
+      "wdp_apis": [
+        "new App.Window()",
+        "App.Scene.Add",
+        "App.Scene.Update"
+      ],
+      "purpose": "车辆或站点点击后弹出视频监控窗口"
+    },
+    {
+      "name": "镜头聚焦模块",
+      "wdp_apis": [
+        "App.CameraControl.Focus",
+        "App.CameraControl.SetCameraPose"
+      ],
+      "purpose": "车辆点击或异常时自动聚焦，失败降级 SetCameraPose"
+    },
+    {
+      "name": "事件联动模块",
+      "wdp_apis": [
+        "App.Renderer.RegisterSceneEvent",
+        "OnWdpSceneIsReady",
+        "OnEntityClicked"
+      ],
+      "purpose": "场景就绪门禁、点击联动与运行事件处理"
+    }
+  ],
+  "api_flow": [
+    {
+      "step": 1,
+      "description": "等待场景就绪后执行业务链路",
+      "api": "App.Renderer.RegisterSceneEvent",
+      "params": {
+        "events": ["OnWdpSceneIsReady"]
+      }
+    },
+    {
+      "step": 2,
+      "description": "创建接驳线路对象",
+      "api": "App.Scene.Add",
+      "params": {
+        "entity": "new App.Path()"
+      }
+    },
+    {
+      "step": 3,
+      "description": "创建班车车辆对象并更新运行状态",
+      "api": "App.Scene.Add",
+      "params": {
+        "entities": [
+          "new App.Particle()",
+          "new App.Poi()"
+        ]
+      }
+    },
+    {
+      "step": 4,
+      "description": "创建轨迹回放绑定对象",
+      "api": "App.Scene.Add",
+      "params": {
+        "entity": "new App.Bound()"
+      }
+    },
+    {
+      "step": 5,
+      "description": "注册点击联动事件",
+      "api": "App.Renderer.RegisterSceneEvent",
+      "params": {
+        "events": ["OnEntityClicked"]
+      }
+    },
+    {
+      "step": 6,
+      "description": "点击车辆后创建视频窗口",
+      "api": "App.Scene.Add",
+      "params": {
+        "entity": "new App.Window()"
+      }
+    },
+    {
+      "step": 7,
+      "description": "点击或异常时聚焦车辆，失败降级 SetCameraPose",
+      "api": "App.CameraControl.Focus",
+      "params": {
+        "fallback": "App.CameraControl.SetCameraPose"
+      }
+    },
+    {
+      "step": 8,
+      "description": "持续更新线路与车辆运行态势",
+      "api": "App.Scene.Update",
+      "params": {
+        "target": "path/particle/poi/window"
+      }
+    }
+  ],
+  "data_flow": [
+    {
+      "step": "App.Scene.Add(Path)",
+      "output": "result.object（pathObj）",
+      "usage": "作为 Bound 的路径绑定对象"
+    },
+    {
+      "step": "App.Scene.Add(Particle)",
+      "output": "result.object（particleObj）",
+      "usage": "作为 Bound 的移动实体绑定对象"
+    },
+    {
+      "step": "OnEntityClicked 回调",
+      "output": "result.object.customId",
+      "usage": "用于匹配车辆信息，创建对应窗口"
+    }
+  ],
+  "cleanup_chain": [
+    {"create": "App.Scene.Add(Path)", "cleanup": "pathObj.Delete()"},
+    {"create": "App.Scene.Add(Particle)", "cleanup": "particleObj.Delete()"},
+    {"create": "App.Scene.Add(Poi)", "cleanup": "poiObj.Delete()"},
+    {"create": "App.Scene.Add(Bound)", "cleanup": "boundObj.Delete()"},
+    {"create": "App.Scene.Add(Window)", "cleanup": "windowObj.Delete()"},
+    {"create": "RegisterSceneEvent", "cleanup": "UnregisterSceneEvent"}
+  ],
+  "pattern": {
+    "type": "scenic-shuttle-monitoring",
+    "architecture": "event-driven-transport-visualization",
+    "data_flow": "realtime-operations-linked-visualization",
+    "recommended_patterns": ["wdp-path-roam-animation"],
+    "key_features": [
+      "线路维度运行态势",
+      "车辆维度运行监控",
+      "轨迹回放",
+      "点击聚焦车辆",
+      "视频窗口联动"
+    ]
+  }
+}

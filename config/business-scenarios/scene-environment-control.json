@@ -1,0 +1,124 @@
+{
+  "metadata": {
+    "scenario_id": "scene-environment-control",
+    "version": "3.0.0"
+  },
+  "id": "scene-environment-control",
+  "name": "环境与天气控制场景",
+  "keywords": [
+    "天气控制",
+    "昼夜切换",
+    "环境模拟",
+    "天气模拟",
+    "场景压暗",
+    "时间控制"
+  ],
+  "synonyms": [
+    "白天黑夜",
+    "日夜交替",
+    "下雨",
+    "下雪",
+    "天气变化",
+    "光照变化",
+    "晴天",
+    "雨天",
+    "夜景",
+    "氛围"
+  ],
+  "priority": 10,
+  "goal": "通过 SetWeather / SetTime / SetDark 控制全局环境状态，用于氛围渲染与业务数据突出展示。",
+  "task_breakdown": [
+    "按需设置天气（Sunny/Rain/Snow）",
+    "按需设置时间（昼夜）",
+    "按需开启压暗突出业务数据",
+    "组件销毁时将所有全局状态还原为默认值"
+  ],
+  "primary_skills": [],
+  "secondary_skills": [],
+  "required_clarifications": [
+    "天气的具体值（Sunny/Rain/Snow/Fog 等）",
+    "时间是固定值还是动画推进",
+    "压暗是全局效果还是仅用于突出特定对象",
+    "退出页面时的默认值（业务期望的 Sunny / 12 / false 是否合适）"
+  ],
+  "modules": [
+    {
+      "name": "天气控制模块",
+      "wdp_apis": [
+        "App.Scene.SetWeather"
+      ],
+      "purpose": "全局设置场景天气（Sunny/Rain/Snow等）"
+    },
+    {
+      "name": "时间控制模块",
+      "wdp_apis": [
+        "App.Scene.SetTime"
+      ],
+      "purpose": "设置场景时间以实现昼夜交替效果"
+    },
+    {
+      "name": "压暗控制模块",
+      "wdp_apis": [
+        "App.Scene.SetDark"
+      ],
+      "purpose": "压暗场景以突出高亮业务数据"
+    },
+    {
+      "name": "其它兜底模块",
+      "wdp_apis": [],
+      "purpose": "未覆盖子需求的通用兜底处理"
+    }
+  ],
+  "api_flow": [
+    {
+      "step": 1,
+      "description": "设置场景天气状态",
+      "api": "App.Scene.SetWeather",
+      "params": {
+        "weather": "Rain"
+      }
+    },
+    {
+      "step": 2,
+      "description": "设置场景时间（如夜间）",
+      "api": "App.Scene.SetTime",
+      "params": {
+        "time": 22
+      }
+    },
+    {
+      "step": 3,
+      "description": "压暗场景突出业务数据",
+      "api": "App.Scene.SetDark",
+      "params": {
+        "bDark": true
+      }
+    }
+  ],
+  "data_flow": [
+    {
+      "step": "SetWeather / SetTime / SetDark",
+      "output": "无下游数据流（全局单例 setter）",
+      "usage": "仅更改渲染环境，不产生可复用的对象句柄"
+    }
+  ],
+  "cleanup_chain": [
+    {"create": "App.Scene.SetWeather(非Sunny)", "cleanup": "App.Scene.SetWeather('Sunny')"},
+    {"create": "App.Scene.SetTime(非12)", "cleanup": "App.Scene.SetTime(12)"},
+    {"create": "App.Scene.SetDark(true)", "cleanup": "App.Scene.SetDark(false)"}
+  ],
+  "cleanup_note": "环境状态属于全局单例，组件销毁时必须重置（SetWeather('Sunny')、SetTime(12)、SetDark(false)）以避免影响其他页面",
+  "pattern": {
+    "type": "environment-control",
+    "architecture": "global-singleton-setter",
+    "data_flow": "no-downstream-data-flow",
+    "recommended_patterns": ["wdp-scene-environment-control"],
+    "key_features": [
+      "天气枚举控制（Sunny/Rain/Snow）",
+      "昼夜时间设置",
+      "场景压暗突出展示",
+      "全局状态必须在清理时还原",
+      "其它兜底处理"
+    ]
+  }
+}

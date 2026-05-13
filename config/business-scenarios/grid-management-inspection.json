@@ -1,0 +1,263 @@
+﻿{
+  "metadata": {
+    "scenario_id": "grid-management-inspection",
+    "version": "3.0.0"
+  },
+  "id": "grid-management-inspection",
+  "name": "网格化管理巡检场景",
+  "keywords": [
+    "网格化管理",
+    "网格巡检",
+    "GeoJson轮廓",
+    "SHP轮廓",
+    "网格区域",
+    "无人机网格巡检"
+  ],
+  "synonyms": [
+    "网格巡查",
+    "网格化巡查",
+    "网格监管",
+    "网格治理"
+  ],
+  "priority": 10,
+  "goal": "围绕网格区域、巡检路径和巡检对象做联动展示。",
+  "task_breakdown": [
+    "确认网格区域是 WDP Range 还是 GIS GeoLayer",
+    "确认区域数据来源是 GeoJson、SHP 还是坐标",
+    "创建路径和巡检对象",
+    "驱动巡检对象运动并联动窗口和相机",
+    "补充巡检停止和清理链路"
+  ],
+  "primary_skills": [
+    "reference/scene/covering/poi/SKILL.md"
+  ],
+  "secondary_skills": [
+    "reference/system/plugin/gisapi/SKILL.md",
+    "reference/scene/covering/bound/SKILL.md",
+    "reference/camera/camera-control/SKILL.md",
+    "reference/renderer/SKILL.md"
+  ],
+  "required_clarifications": [
+    "区域走 WDP Range 还是 GIS GeoLayer",
+    "区域数据来源是 GeoJson、SHP 还是坐标",
+    "巡检对象类别和对象 Id 来源",
+    "是否需要地空协同和相机联动"
+  ],
+  "modules": [
+    {
+      "name": "网格区域模块",
+      "wdp_apis": [
+        "new App.Range()",
+        "App.Scene.Add",
+        "App.Scene.Update"
+      ],
+      "purpose": "创建网格化区域并支持GIS数据源"
+    },
+    {
+      "name": "网格边界路径模块",
+      "wdp_apis": [
+        "new App.Path()",
+        "App.Scene.Add",
+        "App.Scene.Update"
+      ],
+      "purpose": "生成网格边界路径用于巡检"
+    },
+    {
+      "name": "巡检对象模块",
+      "wdp_apis": [
+        "new App.Particle()",
+        "App.Scene.Add",
+        "App.Scene.Update"
+      ],
+      "purpose": "创建无人机或巡检车实体"
+    },
+    {
+      "name": "路径绑定与移动模块",
+      "wdp_apis": [
+        "new App.Bound()",
+        "App.Scene.Add",
+        "App.Scene.Update"
+      ],
+      "purpose": "绑定巡检对象到网格路径并驱动移动"
+    },
+    {
+      "name": "数据采集窗口模块",
+      "wdp_apis": [
+        "new App.Window()",
+        "App.Scene.Add",
+        "App.Scene.Update"
+      ],
+      "purpose": "巡检点数据采集窗口展示"
+    },
+    {
+      "name": "相机跟随模块",
+      "wdp_apis": [
+        "App.CameraControl.UpdateCamera",
+        "App.CameraControl.FocusByLocation"
+      ],
+      "purpose": "相机跟随巡检对象（可选）"
+    },
+    {
+      "name": "事件联动模块",
+      "wdp_apis": [
+        "App.Renderer.RegisterSceneEvent",
+        "OnWdpSceneIsReady",
+        "OnBoundMoveEnd"
+      ],
+      "purpose": "场景就绪门禁与巡检点到达事件处理"
+    }
+  ],
+  "api_flow": [
+    {
+      "step": 1,
+      "description": "确认网格区域类型并创建",
+      "api": "App.Scene.Add / GIS操作",
+      "params": {
+        "entity": "new App.Range() 或 GIS GeoLayer",
+        "config": {
+          "polygon": {
+            "coordinates": "[[121.464, 31.224], ...]"
+          },
+          "rangeStyle": {
+            "fillColor": "rgba(0, 128, 255, 0.2)",
+            "outlineColor": "#0080ff",
+            "height": 30
+          },
+          "customId": "grid_zone_1"
+        }
+      }
+    },
+    {
+      "step": 2,
+      "description": "创建网格边界路径",
+      "api": "App.Scene.Add",
+      "params": {
+        "entity": "new App.Path()",
+        "config": {
+          "polyline": {
+            "coordinates": "[[121.464, 31.224, 30], [121.465, 31.224, 30], ...]"
+          },
+          "pathStyle": {
+            "type": "solid",
+            "lineColor": "#0080ff",
+            "lineWidth": 2
+          },
+          "customId": "grid_path_1"
+        }
+      }
+    },
+    {
+      "step": 3,
+      "description": "创建无人机/巡检车粒子实体",
+      "api": "App.Scene.Add",
+      "params": {
+        "entity": "new App.Particle()",
+        "config": {
+          "location": "[121.464, 31.224, 30]",
+          "particleType": "vehicle_drone",
+          "particleStyle": {
+            "scale": 1.0
+          },
+          "customId": "inspection_drone_1"
+        }
+      }
+    },
+    {
+      "step": 4,
+      "description": "绑定巡检对象到网格路径",
+      "api": "App.Scene.Add",
+      "params": {
+        "entity": "new App.Bound()",
+        "config": {
+          "moving": "${droneParticle}",
+          "path": "${gridPath}",
+          "boundStyle": {
+            "time": 120,
+            "bLoop": true,
+            "speed": 1.0
+          },
+          "customId": "drone_bound_1"
+        }
+      }
+    },
+    {
+      "step": 5,
+      "description": "注册巡检点到达事件",
+      "api": "App.Renderer.RegisterSceneEvent",
+      "params": {
+        "events": [
+          {
+            "name": "OnBoundMoveEnd",
+            "func": "async (ev) => { /* 到达巡检点，触发数据采集 */ }"
+          }
+        ]
+      }
+    },
+    {
+      "step": 6,
+      "description": "创建巡检数据窗口",
+      "api": "App.Scene.Add",
+      "params": {
+        "entity": "new App.Window()",
+        "config": {
+          "location": "${checkpointLocation}",
+          "windowStyle": {
+            "url": "inspection_data.html?gridId=grid_1",
+            "size": "[350, 450]",
+            "followEntity": true
+          },
+          "customId": "grid_window_1"
+        }
+      }
+    },
+    {
+      "step": 7,
+      "description": "相机跟随巡检对象（可选）",
+      "api": "App.CameraControl.UpdateCamera",
+      "params": {
+        "mode": "follow",
+        "target": "${droneParticle}"
+      }
+    }
+  ],
+  "data_flow": [
+    {
+      "step": "Range/GIS创建",
+      "output": "区域对象（含边界坐标）",
+      "usage": "用于生成网格边界路径"
+    },
+    {
+      "step": "App.Scene.Add(Path)",
+      "output": "result.object（pathObj）",
+      "usage": "作为 Bound 的路径绑定对象"
+    },
+    {
+      "step": "OnBoundMoveEnd 回调",
+      "output": "result.passedPointIndex",
+      "usage": "用于判断到达巡检点，触发数据采集"
+    }
+  ],
+  "cleanup_chain": [
+    {"create": "Range/GIS区域", "cleanup": "Delete(customId)"},
+    {"create": "App.Scene.Add(Path)", "cleanup": "pathObj.Delete()"},
+    {"create": "App.Scene.Add(Particle)", "cleanup": "particleObj.Delete()"},
+    {"create": "App.Scene.Add(Bound)", "cleanup": "boundObj.Delete()"},
+    {"create": "App.Scene.Add(Window)", "cleanup": "windowObj.Delete()"},
+    {"create": "RegisterSceneEvent", "cleanup": "UnregisterSceneEvent"},
+    {"create": "Camera跟随", "cleanup": "ResetCameraMode"}
+  ],
+  "pattern": {
+    "type": "grid-management",
+    "architecture": "gis-wdp-hybrid",
+    "data_flow": "spatial-inspection-driven",
+    "recommended_patterns": ["wdp-path-roam-animation"],
+    "key_features": [
+      "网格区域可视化",
+      "GIS/WDP混合数据源",
+      "无人机/车辆巡检",
+      "路径动画控制",
+      "相机跟随模式",
+      "巡检点数据采集"
+    ]
+  }
+}

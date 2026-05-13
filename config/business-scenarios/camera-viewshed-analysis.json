@@ -1,0 +1,130 @@
+﻿{
+  "metadata": {
+    "scenario_id": "camera-viewshed-analysis",
+    "version": "3.0.0"
+  },
+  "id": "camera-viewshed-analysis",
+  "name": "监控可视域分析场景",
+  "keywords": [
+    "可视域分析",
+    "监控覆盖",
+    "视域分析",
+    "摄像头覆盖",
+    "监控盲区",
+    "视角覆盖"
+  ],
+  "synonyms": [
+    "视野分析",
+    "覆盖分析",
+    "监控视角",
+    "视域范围",
+    "探头覆盖",
+    "监控布点",
+    "盲区分析",
+    "视锥体"
+  ],
+  "priority": 10,
+  "goal": "创建虚拟监控探头实体（非玩家相机），配置 FOV 与投射距离，渲染可视锥体用于监控覆盖分析。",
+  "task_breakdown": [
+    "创建虚拟探头实体（位置、朝向）",
+    "配置探头视场角 FOV",
+    "配置探头投射距离",
+    "按需更新位置 / 朝向",
+    "退出时严格 Delete 探头（GPU 敏感）"
+  ],
+  "primary_skills": [
+    "reference/camera/camera-control/SKILL.md"
+  ],
+  "secondary_skills": [
+    "reference/tools/coordinate/SKILL.md"
+  ],
+  "required_clarifications": [
+    "探头位置、朝向（pitch / yaw）数据来源",
+    "是否多探头并发（多探头须用不同 customId）",
+    "FOV 与距离是否运行中动态可调",
+    "可视锥体颜色 / 样式是否需要定制",
+    "是否需要与真实摄像头 POI 联动"
+  ],
+  "modules": [
+    {
+      "name": "虚拟探头创建模块",
+      "wdp_apis": [
+        "new App.Camera()",
+        "App.Scene.Add"
+      ],
+      "purpose": "创建虚拟监控探头实体（非玩家视角相机）"
+    },
+    {
+      "name": "可视域配置模块",
+      "wdp_apis": [
+        "camera.SetFOV",
+        "camera.SetDistance"
+      ],
+      "purpose": "配置探头视场角和投射距离以生成可视锥体"
+    },
+    {
+      "name": "其它兜底模块",
+      "wdp_apis": [],
+      "purpose": "未覆盖子需求的通用兜底处理"
+    }
+  ],
+  "api_flow": [
+    {
+      "step": 1,
+      "description": "创建虚拟监控探头",
+      "api": "App.Scene.Add",
+      "params": {
+        "entity": "new App.Camera()",
+        "config": {
+          "location": "${cameraLocation}",
+          "rotation": {
+            "pitch": -15,
+            "yaw": 90
+          },
+          "customId": "viewshed_camera_1"
+        }
+      }
+    },
+    {
+      "step": 2,
+      "description": "设置探头视场角",
+      "api": "camera.SetFOV",
+      "params": {
+        "fov": 60
+      }
+    },
+    {
+      "step": 3,
+      "description": "设置探头投射距离",
+      "api": "camera.SetDistance",
+      "params": {
+        "distance": 200
+      }
+    }
+  ],
+  "data_flow": [
+    {
+      "step": "App.Scene.Add(Camera)",
+      "output": "result.object（cameraObj）",
+      "usage": "作为 SetFOV / SetDistance / Delete 的调用对象"
+    }
+  ],
+  "cleanup_chain": [
+    {"create": "App.Scene.Add(new App.Camera())", "cleanup": "cameraObj.Delete() 或 App.Scene.Delete(customId)"}
+  ],
+  "cleanup_note": "可视域分析消耗较多GPU资源，离开页面时必须严格执行 App.Scene.Delete 清理探头实体",
+  "pattern": {
+    "type": "viewshed-analysis",
+    "architecture": "entity-camera-projection",
+    "data_flow": "config-then-render",
+    "recommended_patterns": ["wdp-camera-viewshed-analysis"],
+    "key_features": [
+      "虚拟监控探头（非玩家相机）",
+      "FOV视场角配置",
+      "投射距离配置",
+      "可视锥体3D渲染",
+      "GPU资源敏感需严格清理",
+      "其它兜底处理"
+    ]
+  }
+}

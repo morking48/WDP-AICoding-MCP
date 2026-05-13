@@ -1,0 +1,185 @@
+﻿{
+  "metadata": {
+    "scenario_id": "bim-building-exploration",
+    "version": "3.0.0"
+  },
+  "id": "bim-building-exploration",
+  "name": "BIM楼层拆解场景",
+  "keywords": [
+    "BIM拆楼",
+    "楼层拆解",
+    "建筑拆解",
+    "楼层展开",
+    "BIM高亮",
+    "楼层查看"
+  ],
+  "synonyms": [
+    "楼层分析",
+    "建筑拆分",
+    "BIM模型",
+    "楼层爆炸",
+    "建筑剖切",
+    "楼层信息",
+    "BIM详情",
+    "建筑分析",
+    "楼层管理"
+  ],
+  "priority": 10,
+  "goal": "相机飞到建筑观测角度 → 楼层拆解 → 高亮目标楼层或房间 → 弹出 BIM 详情窗口。",
+  "task_breakdown": [
+    "相机预定位到建筑观测角度",
+    "对目标建筑执行楼层拆解（展开动画）",
+    "高亮目标楼层或房间构件",
+    "在高亮位置创建 BIM 详情窗口",
+    "退出时楼层合拢、取消高亮、销毁窗口、复位相机"
+  ],
+  "primary_skills": [
+    "reference/system/plugin/bimapi/SKILL.md"
+  ],
+  "secondary_skills": [
+    "reference/camera/camera-control/SKILL.md",
+    "reference/scene/covering/poi/SKILL.md",
+    "reference/tools/picker/SKILL.md"
+  ],
+  "pre_discovery": {
+    "required": true,
+    "strategy": "bim_hierarchy_traversal",
+    "when": "object_id_missing",
+    "target_skill": "wdp-api-scene-discovery",
+    "discovery_path": "C",
+    "steps": [
+      "若用户无法提供 buildingId / targetFloor / targetNodeId → 自动路由到 wdp-api-scene-discovery",
+      "使用路径 C（BIM层级遍历）：Hierarchy.GetChildren() 从建筑根节点展开",
+      "按名称/类型过滤匹配用户描述的楼层/房间构件",
+      "发现后写入 Cold.entities.snapshot + Hot.selection 再继续主流程"
+    ]
+  },
+  "required_clarifications": [
+    "buildingId 与 targetFloor 的来源（静态传参 / 用户点选 / 属性查询）",
+    "targetNodeId 来源（屏幕拾取 / BIM 构件查询）",
+    "highlightLocation 坐标来源",
+    "是否需要多楼层并发拆解",
+    "⚠ 原文 api_flow 中的 App.Bim.Split / App.Bim.Highlight 为业务层包装或示例假设名，官方 BIM 文档中并不存在。真实实现请回 reference/system/plugin/bimapi/SKILL.md 与 official-bim-full.md 对齐：构件高亮真实 API 为 entity.SetNodeHighLight(nodeId, ...)；楼层拆解目前官方无专用 API，常通过 entity.SetVisible 隐藏非目标楼层构件实现‘突出效果’",
+    "若需真正的楼层炸裂动画，请先确认平台是否提供定制能力"
+  ],
+  "modules": [
+    {
+      "name": "相机定位模块",
+      "wdp_apis": [
+        "App.CameraControl.SetCameraPose"
+      ],
+      "purpose": "拆楼前将相机飞到建筑的合适观测角度"
+    },
+    {
+      "name": "BIM拆解模块",
+      "wdp_apis": [
+        "App.Bim.Split（⚠ 示例占位名，真实实现参考 entity.SetVisible / 业务层封装）"
+      ],
+      "purpose": "对目标建筑进行楼层拆解展开动画"
+    },
+    {
+      "name": "BIM高亮模块",
+      "wdp_apis": [
+        "App.Bim.Highlight（⚠ 示例占位名，真实 API 为 entity.SetNodeHighLight）"
+      ],
+      "purpose": "高亮显示目标楼层或房间"
+    },
+    {
+      "name": "详情窗口模块",
+      "wdp_apis": [
+        "new App.Window()",
+        "App.Scene.Add"
+      ],
+      "purpose": "在高亮目标旁边弹出BIM详情窗口"
+    },
+    {
+      "name": "其它兜底模块",
+      "wdp_apis": [],
+      "purpose": "未覆盖子需求的通用兜底处理"
+    }
+  ],
+  "api_flow": [
+    {
+      "step": 1,
+      "description": "将相机飞到目标建筑的观测角度",
+      "api": "App.CameraControl.SetCameraPose",
+      "params": {
+        "target": "${buildingCenter}",
+        "pitch": -30,
+        "yaw": 45,
+        "distance": 500
+      }
+    },
+    {
+      "step": 2,
+      "description": "对建筑执行楼层拆解（示例 API 名，真实实现请对齐 official-bim-full.md）",
+      "api": "App.Bim.Split",
+      "params": {
+        "build_id": "${buildingId}",
+        "floor": "${targetFloor}"
+      }
+    },
+    {
+      "step": 3,
+      "description": "高亮目标楼层或房间（示例 API 名，真实 API 为 entity.SetNodeHighLight）",
+      "api": "App.Bim.Highlight",
+      "params": {
+        "nodeId": "${targetNodeId}"
+      }
+    },
+    {
+      "step": 4,
+      "description": "在高亮位置创建BIM详情窗口",
+      "api": "App.Scene.Add",
+      "params": {
+        "entity": "new App.Window()",
+        "config": {
+          "location": "${highlightLocation}",
+          "windowStyle": {
+            "url": "bim_detail.html?floor=${floor}",
+            "size": [350, 400]
+          },
+          "customId": "bim_detail_window"
+        }
+      }
+    }
+  ],
+  "data_flow": [
+    {
+      "step": "App.Bim.Split / 楼层显隐操作",
+      "output": "业务上下文（已拆解 buildingId、floor）",
+      "usage": "用于清理时还原楼层"
+    },
+    {
+      "step": "高亮 API 调用",
+      "output": "已高亮的 nodeId 列表",
+      "usage": "用于清理时取消高亮"
+    },
+    {
+      "step": "App.Scene.Add(Window)",
+      "output": "windowObj",
+      "usage": "用于清理时销毁窗口"
+    }
+  ],
+  "cleanup_chain": [
+    {"create": "App.Bim.Split（或 SetVisible 实现的楼层突出）", "cleanup": "还原楼层可见性 / 官方 Reset（请对齐 official-bim-full.md，确认真实 API 名）"},
+    {"create": "App.Bim.Highlight（真实 entity.SetNodeHighLight）", "cleanup": "取消高亮（调用对应反操作，请对齐 official-bim-full.md）"},
+    {"create": "App.Scene.Add(Window)", "cleanup": "windowObj.Delete()"},
+    {"create": "App.CameraControl.SetCameraPose", "cleanup": "无需专门清理（可按需再次 SetCameraPose 复位）"}
+  ],
+  "cleanup_note": "退出楼层查看时必须执行楼层合拢/可见性还原、取消构件高亮，并清理 Window 实体",
+  "pattern": {
+    "type": "bim-exploration",
+    "architecture": "camera-split-highlight-window",
+    "data_flow": "sequential-drill-down",
+    "recommended_patterns": ["wdp-bim-building-split"],
+    "key_features": [
+      "相机预定位到建筑",
+      "楼层拆解炸裂动画",
+      "目标楼层/房间高亮",
+      "BIM详情窗口展示",
+      "退出时楼层合拢还原",
+      "其它兜底处理"
+    ]
+  }
+}

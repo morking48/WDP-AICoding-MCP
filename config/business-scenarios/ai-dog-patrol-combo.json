@@ -1,0 +1,299 @@
+﻿{
+  "metadata": {
+    "scenario_id": "ai-dog-patrol-combo",
+    "version": "3.0.0"
+  },
+  "id": "ai-dog-patrol-combo",
+  "name": "AI机器狗巡逻场景",
+  "keywords": [
+    "机器狗巡逻",
+    "路径移动",
+    "组合体移动",
+    "相机跟随",
+    "POI弹窗",
+    "巡逻机器人",
+    "实体跟随",
+    "路径漫游"
+  ],
+  "synonyms": [
+    "巡逻路径",
+    "实体漫游",
+    "第三人称跟随",
+    "FPS跟随",
+    "路径跟随",
+    "移动跟随",
+    "移动漫游",
+    "轨迹回放"
+  ],
+  "priority": 10,
+  "goal": "让机器狗实体带 POI 标注沿巡逻路径移动，相机第三人称跟随，POI 点击弹出信息窗口。",
+  "task_breakdown": [
+    "创建巡逻路径线",
+    "创建机器狗粒子实体",
+    "创建绑定到机器狗的 POI 标注",
+    "用 Bound 将 Particle + POI 组合体绑定到路径驱动移动",
+    "启动相机第三人称跟随机器狗",
+    "注册 POI 点击事件并动态创建信息弹窗",
+    "补充退出页面时的清理链路（Bound / 实体 / Window / Follow / 事件）"
+  ],
+  "primary_skills": [
+    "reference/scene/covering/bound/SKILL.md"
+  ],
+  "secondary_skills": [
+    "reference/scene/covering/poi/SKILL.md",
+    "reference/camera/camera-control/SKILL.md",
+    "reference/renderer/SKILL.md"
+  ],
+  "required_clarifications": [
+    "巡逻路径是新建还是已有（pathObj 来源）",
+    "机器狗 particleType 的实际枚举值（api_flow 示例使用 vehicle_taxi 仅为占位，请用户替换为业务所需的真实 particleType）",
+    "是否循环巡逻，以及总时长 / 速度",
+    "相机是第三人称跟随还是 FPS（bFPS），是否允许运行中切换",
+    "点击 POI 弹出的 Window URL 和尺寸",
+    "退出页面时是否需要整体清理（包含 Follow 停止、事件解绑）"
+  ],
+  "modules": [
+    {
+      "name": "路径模块",
+      "wdp_apis": [
+        "new App.Path()",
+        "pathStyle.type",
+        "pathStyle.color",
+        "pathStyle.width"
+      ],
+      "purpose": "创建巡逻路径线，定义机器狗移动轨迹"
+    },
+    {
+      "name": "机器狗实体模块",
+      "wdp_apis": [
+        "new App.Particle()",
+        "particleType",
+        "particleStyle.scale3d"
+      ],
+      "purpose": "创建机器狗粒子实体，作为路径移动的主体"
+    },
+    {
+      "name": "POI标注模块",
+      "wdp_apis": [
+        "new App.Poi()",
+        "poiStyle.markerNormalUrl",
+        "poiStyle.text",
+        "poiStyle.textStyle"
+      ],
+      "purpose": "创建可点击的POI点位，绑定到机器狗上随路径移动"
+    },
+    {
+      "name": "路径绑定模块",
+      "wdp_apis": [
+        "new App.Bound()",
+        "boundStyle.time",
+        "boundStyle.bLoop",
+        "boundStyle.speed",
+        "bound.bindEntities"
+      ],
+      "purpose": "将机器狗和POI绑定到路径上，驱动组合体沿路径移动"
+    },
+    {
+      "name": "相机跟随模块",
+      "wdp_apis": [
+        "App.CameraControl.Follow",
+        "followRotation",
+        "distance",
+        "bFPS"
+      ],
+      "purpose": "相机第三人称跟随机器狗实体移动"
+    },
+    {
+      "name": "事件交互模块",
+      "wdp_apis": [
+        "App.Renderer.RegisterSceneEvent",
+        "OnEntityClicked"
+      ],
+      "purpose": "注册全局点击事件，监听POI被点击"
+    },
+    {
+      "name": "Window弹窗模块",
+      "wdp_apis": [
+        "new App.Window()",
+        "windowStyle.url",
+        "windowStyle.size",
+        "windowStyle.offset"
+      ],
+      "purpose": "点击POI后动态创建信息弹窗"
+    },
+    {
+      "name": "场景管理模块",
+      "wdp_apis": [
+        "App.Scene.Add",
+        "App.Scene.Delete"
+      ],
+      "purpose": "添加和清理场景中的所有实体"
+    },
+    {
+      "name": "其它",
+      "wdp_apis": [],
+      "purpose": "未覆盖子需求的通用兜底处理"
+    }
+  ],
+  "api_flow": [
+    {
+      "step": 1,
+      "description": "创建巡逻路径线",
+      "api": "App.Scene.Add",
+      "params": {
+        "entity": "new App.Path()",
+        "config": {
+          "polyline": {
+            "coordinates": "[[121.453, 31.112, 69], [121.477, 31.092, 85], ...]"
+          },
+          "pathStyle": {
+            "type": "arrow",
+            "width": 20,
+            "color": "a54cffff",
+            "passColor": "c9ff23ff"
+          },
+          "customId": "dog-patrol-path"
+        }
+      }
+    },
+    {
+      "step": 2,
+      "description": "创建机器狗粒子实体（particleType 为示例占位，需业务替换）",
+      "api": "App.Scene.Add",
+      "params": {
+        "entity": "new App.Particle()",
+        "config": {
+          "location": "[121.453, 31.112, 69]",
+          "particleType": "vehicle_taxi",
+          "scale3d": [30, 30, 30],
+          "customId": "patrol-dog"
+        }
+      }
+    },
+    {
+      "step": 3,
+      "description": "创建POI点位标注",
+      "api": "App.Scene.Add",
+      "params": {
+        "entity": "new App.Poi()",
+        "config": {
+          "location": "[121.453, 31.112, 69]",
+          "poiStyle": {
+            "markerNormalUrl": "dog_poi_icon.png",
+            "text": "机器狗巡逻"
+          },
+          "customId": "patrol-dog-poi"
+        }
+      }
+    },
+    {
+      "step": 4,
+      "description": "将机器狗和POI绑定到路径，驱动组合体移动",
+      "api": "App.Scene.Add",
+      "params": {
+        "entity": "new App.Bound()",
+        "config": {
+          "moving": "${particleObj}",
+          "path": "${pathObj}",
+          "bindEntities": ["${poiObj}"],
+          "boundStyle": {
+            "time": 120,
+            "bLoop": true,
+            "speed": 1.0
+          },
+          "customId": "dog-patrol-bound"
+        }
+      }
+    },
+    {
+      "step": 5,
+      "description": "注册POI点击事件监听",
+      "api": "App.Renderer.RegisterSceneEvent",
+      "params": {
+        "events": [
+          {
+            "name": "OnEntityClicked",
+            "func": "async (ev) => { if(ev.result.object.customId === 'patrol-dog-poi') { /* 创建Window弹窗 */ } }"
+          }
+        ]
+      }
+    },
+    {
+      "step": 6,
+      "description": "启动相机第三人称跟随机器狗",
+      "api": "App.CameraControl.Follow",
+      "params": {
+        "followRotation": {
+          "pitch": -20,
+          "yaw": 20
+        },
+        "useRelativeRotation": true,
+        "distance": 200,
+        "bFPS": false,
+        "entity": "${particleObj}"
+      }
+    },
+    {
+      "step": 7,
+      "description": "[事件回调中] 点击POI后创建Window弹窗",
+      "api": "App.Scene.Add",
+      "params": {
+        "entity": "new App.Window()",
+        "config": {
+          "location": "${clickedPoiLocation}",
+          "windowStyle": {
+            "url": "dog_info.html?id=${dogId}",
+            "size": [300, 250],
+            "offset": [0, 1.7]
+          },
+          "customId": "patrol-dog-window"
+        }
+      }
+    }
+  ],
+  "data_flow": [
+    {
+      "step": "App.Scene.Add(Path)",
+      "output": "result.object（pathObj）",
+      "usage": "作为 Bound 的 path 绑定对象"
+    },
+    {
+      "step": "App.Scene.Add(Particle)",
+      "output": "result.object（particleObj）",
+      "usage": "作为 Bound 的 moving、CameraControl.Follow 的 entity"
+    },
+    {
+      "step": "App.Scene.Add(Poi)",
+      "output": "result.object（poiObj）",
+      "usage": "作为 Bound.bindEntities 的子实体，实现组合体同步移动"
+    },
+    {
+      "step": "OnEntityClicked 回调",
+      "output": "result.object.customId, result.object.location",
+      "usage": "用于匹配 POI 并创建对应 Window"
+    }
+  ],
+  "cleanup_chain": [
+    {"create": "App.Scene.Add(Path)", "cleanup": "pathObj.Delete()"},
+    {"create": "App.Scene.Add(Particle)", "cleanup": "particleObj.Delete()"},
+    {"create": "App.Scene.Add(Poi)", "cleanup": "poiObj.Delete()"},
+    {"create": "App.Scene.Add(Bound)", "cleanup": "boundObj.Delete()"},
+    {"create": "App.Scene.Add(Window)", "cleanup": "windowObj.Delete()"},
+    {"create": "App.CameraControl.Follow", "cleanup": "停止跟随（UnFollow 或 SetCameraPose 复位相机）"},
+    {"create": "RegisterSceneEvent(OnEntityClicked)", "cleanup": "UnregisterSceneEvent(OnEntityClicked)"}
+  ],
+  "pattern": {
+    "type": "workflow-orchestration",
+    "architecture": "combo-entity-path-follow",
+    "data_flow": "event-driven-animation",
+    "recommended_patterns": ["wdp-path-roam-animation"],
+    "key_features": [
+      "组合体路径移动（Particle+POI绑定Bound）",
+      "相机第三人称跟随CameraControl.Follow",
+      "POI点击触发Window弹窗",
+      "bindEntities实现多实体同步移动",
+      "事件驱动弹窗按需创建",
+      "其它兜底处理"
+    ]
+  }
+}

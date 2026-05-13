@@ -1,0 +1,147 @@
+﻿{
+  "metadata": {
+    "version": "3.0.0",
+    "created_at": "2026-04-20",
+    "description": "WDP 业务场景索引。仅存放路由必需字段（关键词/同义词/优先级/目标/skill路由/文件名）。命中场景后再按需加载对应 <id>.json。",
+    "match_rules": [
+      "对用户自然语言需求做关键词/同义词匹配（中文归一化、去空白）",
+      "命中多个场景时按 priority 升序（数字小=优先）、再按命中词数降序",
+      "全部未命中 → 走 id='other' 分支：跳过场景模板，直接进入 api-patterns.json + wdp-entry-agent 路由，并在报告的“缺失输入”中追问业务类型",
+      "禁止一次性加载全部场景文件；命中后仅加载 top1（或明确多候选时 top2）"
+    ]
+  },
+  "scenarios": [
+    {
+      "id": "video-perimeter-monitoring",
+      "name": "视频周界场景",
+      "priority": 10,
+      "goal": "在三维场景中展示周界、监控点位、告警联动和视频窗口。",
+      "keywords": ["视频监控", "周界防护", "入侵检测", "实时告警", "视频分析", "AI识别"],
+      "synonyms": ["电子围栏", "围栏告警", "周界报警", "安防监控", "摄像头", "监控摄像", "视频点位", "安保监控", "视频联动", "围界"],
+      "primary_skills": ["reference/scene/covering/poi/SKILL.md", "reference/renderer/SKILL.md"],
+      "secondary_skills": ["reference/camera/camera-control/SKILL.md", "reference/tools/picker/SKILL.md"],
+      "file": "video-perimeter-monitoring.json"
+    },
+    {
+      "id": "ai-robot-inspection",
+      "name": "AI 机器人巡检场景",
+      "priority": 10,
+      "goal": "让巡检对象沿路径移动，并在关键点联动窗口、状态和相机。",
+      "keywords": ["机器人巡检", "自动巡航", "设备监测", "异常识别", "路径规划", "数据采集"],
+      "synonyms": ["智能巡检", "自动化巡检", "巡检机器人", "移动巡检", "轨迹规划", "设备巡检"],
+      "primary_skills": ["reference/scene/covering/bound/SKILL.md"],
+      "secondary_skills": ["reference/scene/covering/poi/SKILL.md", "reference/camera/camera-control/SKILL.md", "reference/renderer/SKILL.md"],
+      "file": "ai-robot-inspection.json"
+    },
+    {
+      "id": "emergency-command",
+      "name": "应急指挥场景",
+      "priority": 10,
+      "goal": "展示事件点、影响范围、调度资源、联动窗口与视角。",
+      "keywords": ["应急指挥", "事件响应", "资源调度", "协同处置", "态势感知", "决策支持"],
+      "synonyms": ["应急处置", "突发事件", "应急响应", "应急管理", "指挥调度", "联合指挥"],
+      "primary_skills": ["reference/scene/covering/poi/SKILL.md"],
+      "secondary_skills": ["reference/scene/covering/bound/SKILL.md", "reference/camera/camera-control/SKILL.md", "reference/renderer/SKILL.md"],
+      "file": "emergency-command.json"
+    },
+    {
+      "id": "fire-alert-incident",
+      "name": "火情告警场景",
+      "priority": 20,
+      "goal": "围绕火点告警实现告警展示、联动定位、状态更新和处置反馈。",
+      "keywords": ["火情", "火灾告警", "火点识别", "告警联动", "火情演练"],
+      "synonyms": ["火警", "消防", "烟雾报警", "火灾报警", "起火", "明火"],
+      "primary_skills": ["reference/scene/covering/poi/SKILL.md", "reference/renderer/SKILL.md"],
+      "secondary_skills": ["reference/camera/camera-control/SKILL.md", "reference/data-model/material/SKILL.md"],
+      "file": "fire-alert-incident.json"
+    },
+    {
+      "id": "scenic-shuttle-monitoring",
+      "name": "景区接驳车监控场景",
+      "priority": 10,
+      "goal": "展示车辆运行、轨迹回放、点击联动车辆信息和视频窗口。",
+      "keywords": ["接驳车", "景区班车", "车辆监控", "车辆轨迹", "车载视频", "跟车"],
+      "synonyms": ["运力调度", "班车管理", "公交运行", "线路监控", "运营态势", "交通运力"],
+      "primary_skills": ["reference/scene/covering/bound/SKILL.md"],
+      "secondary_skills": ["reference/scene/covering/poi/SKILL.md", "reference/camera/camera-control/SKILL.md", "reference/renderer/SKILL.md"],
+      "file": "scenic-shuttle-monitoring.json"
+    },
+    {
+      "id": "forest-fire-command-dispatch",
+      "name": "森林防火扑救指挥场景",
+      "priority": 10,
+      "goal": "围绕火点、危险范围、扑救队伍和行动路径做联动展示。",
+      "keywords": ["森林防火", "扑救指挥", "林火", "火点", "扑火队伍", "灭火路径"],
+      "synonyms": ["森林消防", "山火扑救", "林火指挥", "灭火调度", "防火指挥"],
+      "primary_skills": ["reference/scene/covering/poi/SKILL.md", "reference/scene/covering/bound/SKILL.md"],
+      "secondary_skills": ["reference/camera/camera-control/SKILL.md", "reference/renderer/SKILL.md"],
+      "file": "forest-fire-command-dispatch.json"
+    },
+    {
+      "id": "grid-management-inspection",
+      "name": "网格化管理巡检场景",
+      "priority": 10,
+      "goal": "围绕网格区域、巡检路径和巡检对象做联动展示。",
+      "keywords": ["网格化管理", "网格巡检", "GeoJson轮廓", "SHP轮廓", "网格区域", "无人机网格巡检"],
+      "synonyms": ["网格巡查", "网格化巡查", "网格监管", "网格治理"],
+      "primary_skills": ["reference/scene/covering/poi/SKILL.md"],
+      "secondary_skills": ["reference/system/plugin/gisapi/SKILL.md", "reference/scene/covering/bound/SKILL.md", "reference/camera/camera-control/SKILL.md", "reference/renderer/SKILL.md"],
+      "file": "grid-management-inspection.json"
+    },
+    {
+      "id": "ai-dog-patrol-combo",
+      "name": "AI机器狗巡逻场景",
+      "priority": 10,
+      "goal": "让机器狗实体带 POI 标注沿巡逻路径移动，相机第三人称跟随，POI 点击弹出信息窗口。",
+      "keywords": ["机器狗巡逻", "路径移动", "组合体移动", "相机跟随", "POI弹窗", "巡逻机器人", "实体跟随", "路径漫游"],
+      "synonyms": ["巡逻路径", "实体漫游", "第三人称跟随", "FPS跟随", "路径跟随", "移动跟随", "移动漫游", "轨迹回放"],
+      "primary_skills": ["reference/scene/covering/bound/SKILL.md"],
+      "secondary_skills": ["reference/scene/covering/poi/SKILL.md", "reference/camera/camera-control/SKILL.md", "reference/renderer/SKILL.md"],
+      "file": "ai-dog-patrol-combo.json"
+    },
+    {
+      "id": "scene-environment-control",
+      "name": "环境与天气控制场景",
+      "priority": 10,
+      "goal": "通过 SetWeather / SetTime / SetDark 控制全局环境状态，用于氛围渲染与业务数据突出展示。",
+      "keywords": ["天气控制", "昼夜切换", "环境模拟", "天气模拟", "场景压暗", "时间控制"],
+      "synonyms": ["白天黑夜", "日夜交替", "下雨", "下雪", "天气变化", "光照变化", "晴天", "雨天", "夜景", "氛围"],
+      "primary_skills": [],
+      "secondary_skills": [],
+      "file": "scene-environment-control.json"
+    },
+    {
+      "id": "bim-building-exploration",
+      "name": "BIM楼层拆解场景",
+      "priority": 10,
+      "goal": "相机飞到建筑观测角度 → 楼层拆解 → 高亮目标楼层或房间 → 弹出 BIM 详情窗口。",
+      "keywords": ["BIM拆楼", "楼层拆解", "建筑拆解", "楼层展开", "BIM高亮", "楼层查看"],
+      "synonyms": ["楼层分析", "建筑拆分", "BIM模型", "楼层爆炸", "建筑剖切", "楼层信息", "BIM详情", "建筑分析", "楼层管理"],
+      "primary_skills": ["reference/system/plugin/bimapi/SKILL.md"],
+      "secondary_skills": ["reference/camera/camera-control/SKILL.md", "reference/scene/covering/poi/SKILL.md", "reference/tools/picker/SKILL.md"],
+      "file": "bim-building-exploration.json"
+    },
+    {
+      "id": "camera-viewshed-analysis",
+      "name": "监控可视域分析场景",
+      "priority": 10,
+      "goal": "创建虚拟监控探头实体（非玩家相机），配置 FOV 与投射距离，渲染可视锥体用于监控覆盖分析。",
+      "keywords": ["可视域分析", "监控覆盖", "视域分析", "摄像头覆盖", "监控盲区", "视角覆盖"],
+      "synonyms": ["视野分析", "覆盖分析", "监控视角", "视域范围", "探头覆盖", "监控布点", "盲区分析", "视锥体"],
+      "primary_skills": ["reference/camera/camera-control/SKILL.md"],
+      "secondary_skills": ["reference/tools/coordinate/SKILL.md"],
+      "file": "camera-viewshed-analysis.json"
+    },
+    {
+      "id": "other",
+      "name": "其它业务场景（未命中任何预置模板）",
+      "priority": 999,
+      "goal": "未命中任何预置场景。跳过场景模板，直接按能力路由处理，并主动澄清业务类型。",
+      "keywords": [],
+      "synonyms": [],
+      "primary_skills": [],
+      "secondary_skills": [],
+      "file": null
+    }
+  ]
+}

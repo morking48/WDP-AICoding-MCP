@@ -1,0 +1,315 @@
+﻿{
+    "metadata": {
+        "scenario_id": "emergency-command",
+        "version": "3.0.0"
+    },
+    "id": "emergency-command",
+    "name": "应急指挥场景",
+    "keywords": [
+        "应急指挥",
+        "事件响应",
+        "资源调度",
+        "协同处置",
+        "态势感知",
+        "决策支持"
+    ],
+    "synonyms": [
+        "应急处置",
+        "突发事件",
+        "应急响应",
+        "应急管理",
+        "指挥调度",
+        "联合指挥"
+    ],
+    "priority": 10,
+    "goal": "展示事件点、影响范围、调度资源、联动窗口与视角。",
+    "task_breakdown": [
+        "创建事件点位和影响范围",
+        "创建调度资源对象",
+        "创建路径并驱动资源运动",
+        "注册事件联动和状态更新",
+        "补充窗口、资源、事件监听的清理链路"
+    ],
+    "primary_skills": [
+        "reference/scene/covering/poi/SKILL.md"
+    ],
+    "secondary_skills": [
+        "reference/scene/covering/bound/SKILL.md",
+        "reference/camera/camera-control/SKILL.md",
+        "reference/renderer/SKILL.md"
+    ],
+    "required_clarifications": [
+        "事件点和影响范围的数据来源",
+        "调度资源的对象类别和对象 Id 来源",
+        "是否需要实时状态更新",
+        "离开页面时哪些对象必须清空"
+    ],
+    "modules": [
+        {
+            "name": "事件标注模块",
+            "wdp_apis": [
+                "new App.Poi()",
+                "poiStyle.markerNormalUrl",
+                "poiStyle.text",
+                "poiStyle.textStyle"
+            ]
+        },
+        {
+            "name": "资源粒子模块",
+            "wdp_apis": [
+                "new App.Particle()",
+                "particleType",
+                "particleStyle.scale",
+                "particleStyle.url"
+            ]
+        },
+        {
+            "name": "调度路径模块",
+            "wdp_apis": [
+                "new App.Path()",
+                "pathStyle.type",
+                "pathStyle.lineColor",
+                "pathStyle.lineWidth"
+            ]
+        },
+        {
+            "name": "资源移动模块",
+            "wdp_apis": [
+                "new App.Bound()",
+                "boundStyle.time",
+                "boundStyle.bLoop",
+                "boundStyle.speed"
+            ]
+        },
+        {
+            "name": "态势范围模块",
+            "wdp_apis": [
+                "new App.Range()",
+                "rangeStyle.fillColor",
+                "rangeStyle.outlineColor",
+                "rangeStyle.height"
+            ]
+        },
+        {
+            "name": "信息窗口模块",
+            "wdp_apis": [
+                "new App.Window()",
+                "windowStyle.url",
+                "windowStyle.size",
+                "windowStyle.followEntity"
+            ]
+        },
+        {
+            "name": "场景管理模块",
+            "wdp_apis": [
+                "App.Scene.Add",
+                "App.Scene.Update",
+                "App.Scene.Delete",
+                "App.Scene.Creates"
+            ]
+        },
+        {
+            "name": "相机控制模块",
+            "wdp_apis": [
+                "App.CameraControl.FocusByLocation",
+                "App.CameraControl.FocusByCustomId",
+                "App.CameraControl.SetCameraPose"
+            ]
+        }
+    ],
+    "api_flow": [
+        {
+            "step": 1,
+            "description": "批量创建应急事件标注和影响范围",
+            "api": "App.Scene.Creates",
+            "params": {
+                "entities": [
+                    {
+                        "type": "Poi",
+                        "location": "[116.4074, 39.9042, 50]",
+                        "poiStyle": {
+                            "markerNormalUrl": "fire_emergency_icon.png",
+                            "text": "火灾事件"
+                        },
+                        "customId": "emergency_event_1"
+                    },
+                    {
+                        "type": "Range",
+                        "polygon": {
+                            "coordinates": "[[116.407, 39.904], [116.408, 39.904], ...]"
+                        },
+                        "rangeStyle": {
+                            "fillColor": "rgba(255, 0, 0, 0.2)",
+                            "outlineColor": "#ff0000",
+                            "height": 100
+                        },
+                        "customId": "danger_zone_1"
+                    }
+                ]
+            }
+        },
+        {
+            "step": 2,
+            "description": "创建应急资源粒子实体",
+            "api": "App.Scene.Creates",
+            "params": {
+                "entities": [
+                    {
+                        "type": "Particle",
+                        "location": "[116.400, 39.900, 0]",
+                        "particleType": "vehicle_fire_truck",
+                        "particleStyle": {
+                            "scale": 1.2
+                        },
+                        "customId": "fire_truck_1"
+                    }
+                ]
+            }
+        },
+        {
+            "step": 3,
+            "description": "规划资源调度路径",
+            "api": "App.Scene.Creates",
+            "params": {
+                "entities": [
+                    {
+                        "type": "Path",
+                        "polyline": {
+                            "coordinates": "[[116.400, 39.900, 0], [116.4074, 39.9042, 0]]"
+                        },
+                        "pathStyle": {
+                            "type": "arrow",
+                            "lineColor": "#ff6600",
+                            "lineWidth": 4
+                        },
+                        "customId": "dispatch_path_1"
+                    }
+                ]
+            }
+        },
+        {
+            "step": 4,
+            "description": "绑定资源到调度路径",
+            "api": "App.Scene.Add",
+            "params": {
+                "entity": "new App.Bound()",
+                "config": {
+                    "moving": "${fireTruckParticle}",
+                    "path": "${dispatchPath}",
+                    "boundStyle": {
+                        "time": 60,
+                        "bLoop": false,
+                        "speed": 1.5
+                    },
+                    "customId": "resource_bound_1"
+                }
+            }
+        },
+        {
+            "step": 5,
+            "description": "聚焦到应急事件位置",
+            "api": "App.CameraControl.FocusByLocation",
+            "params": {
+                "location": "[116.4074, 39.9042, 50]",
+                "duration": 1000,
+                "pitch": -60,
+                "yaw": 0
+            }
+        },
+        {
+            "step": 6,
+            "description": "创建态势信息窗口",
+            "api": "App.Scene.Add",
+            "params": {
+                "entity": "new App.Window()",
+                "config": {
+                    "location": "[116.4074, 39.9042, 50]",
+                    "windowStyle": {
+                        "url": "emergency_dashboard.html?eventId=event_1",
+                        "size": "[400, 500]",
+                        "offset": "[0, 2]"
+                    },
+                    "customId": "situation_window_1"
+                }
+            }
+        },
+        {
+            "step": 7,
+            "description": "注册资源到达事件",
+            "api": "App.Renderer.RegisterSceneEvent",
+            "params": {
+                "events": [
+                    {
+                        "name": "OnBoundMoveEnd",
+                        "func": "async (ev) => { if(ev.result.customId.startsWith('resource_bound')) { /* 资源到达，更新状态 */ } }"
+                    }
+                ]
+            }
+        },
+        {
+            "step": 8,
+            "description": "更新事件状态标注",
+            "api": "App.Scene.Update",
+            "params": {
+                "customId": "emergency_event_1",
+                "updateData": {
+                    "poiStyle": {
+                        "markerNormalUrl": "fire_controlled_icon.png",
+                        "text": "火灾事件 (处置中)"
+                    }
+                }
+            }
+        }
+    ],
+    "data_flow": [
+        {
+            "step": "App.Scene.Creates",
+            "output": "result.objects（含 eid, customId, location）",
+            "usage": "缓存用于清理和后续更新"
+        },
+        {
+            "step": "OnBoundMoveEnd 回调",
+            "output": "result.customId",
+            "usage": "用于判断资源到达，触发状态更新"
+        }
+    ],
+    "cleanup_chain": [
+        {
+            "create": "App.Scene.Creates(POI/Range)",
+            "cleanup": "Delete(customId)"
+        },
+        {
+            "create": "App.Scene.Creates(Particle)",
+            "cleanup": "particleObj.Delete()"
+        },
+        {
+            "create": "App.Scene.Add(Bound)",
+            "cleanup": "boundObj.Delete()"
+        },
+        {
+            "create": "App.Scene.Add(Window)",
+            "cleanup": "windowObj.Delete()"
+        },
+        {
+            "create": "RegisterSceneEvent",
+            "cleanup": "UnregisterSceneEvent"
+        }
+    ],
+    "pattern": {
+        "type": "command-control",
+        "architecture": "real-time-3d-visualization",
+        "data_flow": "event-driven-spatial",
+        "recommended_patterns": [
+            "wdp-path-roam-animation",
+            "wdp-poi-window-interaction"
+        ],
+        "key_features": [
+            "3D态势可视化",
+            "实时资源调度",
+            "路径动画展示",
+            "事件状态追踪",
+            "空间范围标注",
+            "相机智能聚焦"
+        ]
+    }
+}

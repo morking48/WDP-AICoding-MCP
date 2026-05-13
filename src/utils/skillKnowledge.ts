@@ -122,6 +122,49 @@ function loadRouteMapping(): RouteMapping {
   return data;
 }
 
+let apiPatternsCache: any[] | null = null;
+function loadApiPatterns(): any[] {
+  if (!apiPatternsCache) {
+    const p = path.resolve(__dirname, '../../config/api-patterns.json');
+    apiPatternsCache = fs.existsSync(p) ? ((JSON.parse(fs.readFileSync(p, 'utf-8')) as any).patterns || []) : [];
+  }
+  return apiPatternsCache || [];
+}
+
+interface SceneEntry { id: string; name: string; priority: number; goal: string; keywords: string[]; synonyms: string[]; primary_skills: string[]; secondary_skills: string[]; file: string | null; }
+interface SceneIndex { scenarios: SceneEntry[]; }
+let sceneIndex: SceneIndex | null = null;
+function loadSceneIndex(): SceneIndex | null {
+  if (sceneIndex) return sceneIndex;
+  const p = path.resolve(__dirname, '../../config/business-scenarios/_index.json');
+  if (!fs.existsSync(p)) return null;
+  sceneIndex = JSON.parse(fs.readFileSync(p, 'utf-8')) as SceneIndex;
+  return sceneIndex;
+}
+
+function matchScene(input: string): SceneEntry | null {
+  const idx = loadSceneIndex();
+  if (!idx || !idx.scenarios) return null;
+  const normalized = input.replace(/\s+/g, '').toLowerCase();
+  let bestMatch: SceneEntry | null = null;
+  let bestScore = 0;
+  for (const s of idx.scenarios) {
+    if (s.id === 'other') continue;
+    let score = 0;
+    for (const kw of s.keywords) {
+      if (normalized.includes(kw.replace(/\s+/g, '').toLowerCase())) score += 3;
+    }
+    for (const syn of s.synonyms) {
+      if (normalized.includes(syn.replace(/\s+/g, '').toLowerCase())) score += 2;
+    }
+    if (score > bestScore || (score === bestScore && s.priority < (bestMatch?.priority || 999))) {
+      bestScore = score;
+      bestMatch = s;
+    }
+  }
+  return bestScore > 0 ? bestMatch : null;
+}
+
 function matchKeywords(requirement: string): { domain: string; score: number }[] {
   const lower = requirement.toLowerCase();
   const mapping = loadRouteMapping();
@@ -196,19 +239,33 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
     }
   }
 
-  // 7. 构建工作流步骤
-  const workflowSteps: string[] = [];
-  if (isComplex) {
-    workflowSteps.push('Step 0: 长流程判断 → 启用 context-memory');
+  // 7. 场景模板匹配
+  const scene = matchScene(userRequirement);
+  let sceneSkills: string[] = [];
+  if (scene) {
+    sceneSkills = [...scene.primary_skills, ...scene.secondary_skills].filter(s => s && !matchedSkills.includes(s));
+    for (const ss of sceneSkills) matchedSkills.push(ss);
   }
+
+  // 8. API 模式匹配
+  const patterns = loadApiPatterns();
+  let matchedPatterns: any[] = [];
+  if (patterns.length > 0 && primaryRoute) {
+    matchedPatterns = patterns.filter((p: any) =>
+      p.skill_sequence && p.skill_sequence.some((sp: string) => matchedSkills.includes(sp)));
+    matchedPatterns = matchedPatterns.slice(0, 2);
+  }
+
+  // 9. 构建工作流步骤
+  const workflowSteps: string[] = [];
+  if (isComplex) workflowSteps.push('Step 0: 长流程判断 → 启用 context-memory');
+  if (scene) workflowSteps.push(`🎯 场景: ${scene.name} — ${scene.goal}`);
   workflowSteps.push('Step 1: 意图编排 → 读取 builtin/wdp-intent-orchestrator.md');
   workflowSteps.push('Step 2: 初始化 → 读取 reference/initialization/SKILL.md');
-  if (primaryRoute) {
-    workflowSteps.push(`Step 3: 核心功能 → 读取 ${primaryRoute.skillPath}`);
-  }
-  if (requiredRelatedSkills.length > 0) {
-    workflowSteps.push(`Step 4: 关联 Skill → 读取 ${requiredRelatedSkills.join(', ')}`);
-  }
+  if (primaryRoute) workflowSteps.push(`Step 3: 核心功能 → 读取 ${primaryRoute.skillPath}`);
+  if (requiredRelatedSkills.length > 0) workflowSteps.push(`Step 4: 关联 Skill → 读取 ${requiredRelatedSkills.join(', ')}`);
+  if (sceneSkills.length > 0) workflowSteps.push(`Step 5: 场景 Skill → 读取 ${sceneSkills.join(', ')}`);
+  if (matchedPatterns.length > 0) workflowSteps.push(`Step 6: API 调用模式 → ${matchedPatterns.map((p: any) => p.name).join(', ')}`);
 
   return {
     user_requirement: userRequirement,
@@ -221,6 +278,8 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
     is_complex: isComplex,
     keyword_matches: keywordResults.slice(0, 5),
     disambiguation: disambiguatedDomain || null,
+    scene: scene ? { id: scene.id, name: scene.name, goal: scene.goal } : null,
+    api_patterns: matchedPatterns,
     guidance: isComplex
       ? '⚠️ 检测到复杂任务，建议启用 context-memory 保持跨轮对话状态。请先读取 builtin/wdp-intent-orchestrator.md 了解完整执行流程。'
       : '🚨 请严格按 workflow_steps 顺序读取所有 Skill 文件，禁止跳过任何步骤。所有 WDP API 的正确签名和参数格式均以 Skill 文件为准，禁止凭记忆编造 API 调用。',
