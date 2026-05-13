@@ -1,4 +1,4 @@
-{
+﻿{
   "version": "1.0.0",
   "routes": [
     {
@@ -7,7 +7,7 @@
       "skillPath": "reference/initialization/SKILL.md",
       "keywords": ["初始化", "sdk", "wdpapi", "接入", "new WdpApi", "启动渲染", "config"],
       "aliases": ["init", "初始化", "scene-init"],
-      "officialFiles": []
+      "relatedSkills": []
     },
     {
       "domain": "renderer",
@@ -15,7 +15,7 @@
       "skillPath": "reference/renderer/SKILL.md",
       "keywords": ["渲染", "renderer", "start", "事件注册", "场景事件", "RegisterSceneEvent"],
       "aliases": ["renderer", "渲染器"],
-      "officialFiles": []
+      "relatedSkills": []
     },
     {
       "domain": "camera",
@@ -23,7 +23,7 @@
       "skillPath": "reference/camera/camera-control/SKILL.md",
       "keywords": ["相机", "飞行", "漫游", "聚焦", "跟随", "镜头", "视角", "第三人称"],
       "aliases": ["camera", "camera-control", "flyto"],
-      "officialFiles": [
+      "relatedSkills": [
         "reference/camera/camera-start/SKILL.md",
         "reference/camera/camera-roams/SKILL.md",
         "reference/camera/camera-preset/SKILL.md"
@@ -35,7 +35,7 @@
       "skillPath": "reference/environment/SKILL.md",
       "keywords": ["环境", "天空", "天气", "时间", "光照", "雾", "后期处理", "滤镜"],
       "aliases": ["environment", "环境", "天气"],
-      "officialFiles": []
+      "relatedSkills": []
     },
     {
       "domain": "covering-poi",
@@ -43,7 +43,7 @@
       "skillPath": "reference/scene/covering/poi/SKILL.md",
       "keywords": ["poi", "点位", "标注", "图标"],
       "aliases": ["poi", "点位"],
-      "officialFiles": ["reference/scene/covering/custom-poi/SKILL.md"]
+      "relatedSkills": ["reference/scene/covering/custom-poi/SKILL.md"]
     },
     {
       "domain": "covering-path",
@@ -51,7 +51,7 @@
       "skillPath": "reference/scene/covering/path/SKILL.md",
       "keywords": ["路径", "画线", "绘制路径", "path"],
       "aliases": ["path", "路径"],
-      "officialFiles": []
+      "relatedSkills": []
     },
     {
       "domain": "covering-window",
@@ -59,7 +59,7 @@
       "skillPath": "reference/scene/covering/window/SKILL.md",
       "keywords": ["浮窗", "弹窗", "窗口", "window"],
       "aliases": ["window", "浮窗"],
-      "officialFiles": []
+      "relatedSkills": []
     },
     {
       "domain": "covering-range",
@@ -67,7 +67,7 @@
       "skillPath": "reference/scene/covering/range/SKILL.md",
       "keywords": ["区域", "轮廓", "范围", "range"],
       "aliases": ["range", "区域"],
-      "officialFiles": []
+      "relatedSkills": []
     },
     {
       "domain": "covering-text3d",
@@ -75,7 +75,7 @@
       "skillPath": "reference/scene/covering/text3d/SKILL.md",
       "keywords": ["3d文字", "文字", "文本", "text3d", "标签"],
       "aliases": ["text3d", "3d文字"],
-      "officialFiles": []
+      "relatedSkills": []
     },
     {
       "domain": "covering-light",
@@ -83,7 +83,7 @@
       "skillPath": "reference/scene/covering/light/SKILL.md",
       "keywords": ["灯光", "特效", "light", "光照"],
       "aliases": ["light", "灯光"],
-      "officialFiles": []
+      "relatedSkills": []
     },
     {
       "domain": "covering-particle",
@@ -91,7 +91,7 @@
       "skillPath": "reference/scene/covering/particle/SKILL.md",
       "keywords": ["粒子", "特效", "particle"],
       "aliases": ["particle", "粒子"],
-      "officialFiles": []
+      "relatedSkills": []
     },
     {
       "domain": "covering-highlight-area",
@@ -99,7 +99,7 @@
       "skillPath": "reference/scene/covering/highlight-area/SKILL.md",
       "keywords": ["高亮区域", "highlight area"],
       "aliases": ["highlight-area", "高亮区域"],
-      "officialFiles": []
+      "relatedSkills": []
     },
     {
       "domain": "covering-heatmap",
@@ -107,7 +107,7 @@
       "skillPath": "reference/scene/covering/heatmap/SKILL.md",
       "keywords": ["热力图", "heatmap", "柱状热力图", "空间热力图", "道路热力图"],
       "aliases": ["heatmap", "热力图"],
-      "officialFiles": []
+      "relatedSkills": []
     },
     {
       "domain": "covering-viewshed",
@@ -115,7 +115,7 @@
       "skillPath": "reference/scene/covering/viewshed/SKILL.md",
       "keywords": ["可视域", "viewshed", "通视"],
       "aliases": ["viewshed", "可视域"],
-      "officialFiles": []
+      "relatedSkills": []
     },
     {
       "domain": "covering-parabola",
@@ -123,7 +123,7 @@
       "skillPath": "reference/scene/covering/parabola/SKILL.md",
       "keywords": ["抛物线", "parabola", "弧线"],
       "aliases": ["parabola", "抛物线"],
-      "officialFiles": []
+      "relatedSkills": []
     },
     {
       "domain": "covering-raster",
@@ -131,7 +131,7 @@
       "skillPath": "reference/scene/covering/raster/SKILL.md",
       "keywords": ["栅格", "raster", "图片"],
       "aliases": ["raster", "栅格"],
-      "officialFiles": []
+      "relatedSkills": []
     },
     {
       "domain": "covering-real-time-video",
@@ -139,7 +139,7 @@
       "skillPath": "reference/scene/covering/real-time-video/SKILL.md",
       "keywords": ["实时视频", "视频融合", "监控"],
       "aliases": ["real-time-video", "实时视频"],
-      "officialFiles": []
+      "relatedSkills": []
     },
     {
       "domain": "covering-bound",
@@ -147,7 +147,7 @@
       "skillPath": "reference/scene/covering/bound/SKILL.md",
       "keywords": ["沿路径移动", "bound", "路径移动"],
       "aliases": ["bound", "路径移动"],
-      "officialFiles": []
+      "relatedSkills": []
     },
     {
       "domain": "scene-effects",
@@ -155,7 +155,7 @@
       "skillPath": "reference/scene/effects/SKILL.md",
       "keywords": ["特效", "effects", "场景特效"],
       "aliases": ["effects", "特效"],
-      "officialFiles": []
+      "relatedSkills": []
     },
     {
       "domain": "scene-section",
@@ -163,7 +163,7 @@
       "skillPath": "reference/scene/section/SKILL.md",
       "keywords": ["剖切", "section", "截面"],
       "aliases": ["section", "剖切"],
-      "officialFiles": []
+      "relatedSkills": []
     },
     {
       "domain": "model-static",
@@ -171,7 +171,7 @@
       "skillPath": "reference/scene/model/static/SKILL.md",
       "keywords": ["静态模型", "static model", "模型放置"],
       "aliases": ["static-model", "静态模型"],
-      "officialFiles": ["reference/scene/model/static-instance/SKILL.md"]
+      "relatedSkills": ["reference/scene/model/static-instance/SKILL.md"]
     },
     {
       "domain": "model-skeletal",
@@ -179,7 +179,7 @@
       "skillPath": "reference/scene/model/skeletal/SKILL.md",
       "keywords": ["骨骼动画", "skeletal", "动画模型"],
       "aliases": ["skeletal", "骨骼动画"],
-      "officialFiles": []
+      "relatedSkills": []
     },
     {
       "domain": "model-vegetation",
@@ -187,7 +187,7 @@
       "skillPath": "reference/scene/model/vegetation/SKILL.md",
       "keywords": ["植被", "树", "草", "vegetation"],
       "aliases": ["vegetation", "植被"],
-      "officialFiles": []
+      "relatedSkills": []
     },
     {
       "domain": "model-project",
@@ -195,7 +195,7 @@
       "skillPath": "reference/scene/model/project-model/SKILL.md",
       "keywords": ["工程模型", "project model", "工程摆放"],
       "aliases": ["project-model", "工程模型"],
-      "officialFiles": ["reference/scene/model/project-instance/SKILL.md"]
+      "relatedSkills": ["reference/scene/model/project-instance/SKILL.md"]
     },
     {
       "domain": "model-modeler",
@@ -203,7 +203,7 @@
       "skillPath": "reference/scene/model/modeler-embank/SKILL.md",
       "keywords": ["建模", "路基", "堤坝", "围栏", "楼板", "河道", "水面", "modeler"],
       "aliases": ["modeler", "建模"],
-      "officialFiles": [
+      "relatedSkills": [
         "reference/scene/model/modeler-fence/SKILL.md",
         "reference/scene/model/modeler-floor/SKILL.md",
         "reference/scene/model/modeler-river/SKILL.md",
@@ -218,7 +218,7 @@
       "skillPath": "reference/scene/scene/SKILL.md",
       "keywords": ["场景", "批量操作", "查询", "删除", "清除", "选择集", "保存", "加载"],
       "aliases": ["scene", "场景管理"],
-      "officialFiles": [
+      "relatedSkills": [
         "reference/scene/tiles/SKILL.md",
         "reference/scene/earth-tiles/SKILL.md",
         "reference/scene/node/SKILL.md",
@@ -234,7 +234,7 @@
       "skillPath": "reference/tools/coordinate/SKILL.md",
       "keywords": ["坐标", "测量", "拾取", "小地图", "指南针", "取点", "取线"],
       "aliases": ["tools", "工具"],
-      "officialFiles": [
+      "relatedSkills": [
         "reference/tools/measure/SKILL.md",
         "reference/tools/picker/SKILL.md",
         "reference/tools/mini-map/SKILL.md",
@@ -251,7 +251,7 @@
       "skillPath": "reference/tools/china-map/SKILL.md",
       "keywords": ["中国地图", "china map", "地图"],
       "aliases": ["china-map", "中国地图"],
-      "officialFiles": []
+      "relatedSkills": []
     },
     {
       "domain": "tools-color",
@@ -259,7 +259,7 @@
       "skillPath": "reference/tools/color/SKILL.md",
       "keywords": ["颜色", "color", "色值"],
       "aliases": ["color", "颜色"],
-      "officialFiles": []
+      "relatedSkills": []
     },
     {
       "domain": "tools-move-linear",
@@ -267,7 +267,7 @@
       "skillPath": "reference/tools/move-linear/SKILL.md",
       "keywords": ["线性移动", "move linear", "直线移动"],
       "aliases": ["move-linear", "线性移动"],
-      "officialFiles": []
+      "relatedSkills": []
     },
     {
       "domain": "tools-screen",
@@ -275,7 +275,7 @@
       "skillPath": "reference/tools/screen/SKILL.md",
       "keywords": ["屏幕", "screen", "截图"],
       "aliases": ["screen", "屏幕"],
-      "officialFiles": []
+      "relatedSkills": []
     },
     {
       "domain": "tools-shape",
@@ -283,7 +283,7 @@
       "skillPath": "reference/tools/shape/SKILL.md",
       "keywords": ["形状", "shape", "图形"],
       "aliases": ["shape", "形状"],
-      "officialFiles": []
+      "relatedSkills": []
     },
     {
       "domain": "data-model",
@@ -291,7 +291,7 @@
       "skillPath": "reference/data-model/geometry/SKILL.md",
       "keywords": ["几何体", "材质", "点聚合", "资产加载", "地理参考"],
       "aliases": ["data-model", "数据模型"],
-      "officialFiles": [
+      "relatedSkills": [
         "reference/data-model/material/SKILL.md",
         "reference/data-model/cluster/SKILL.md",
         "reference/data-model/geo-reference/SKILL.md",
@@ -306,7 +306,7 @@
       "skillPath": "reference/system/system/SKILL.md",
       "keywords": ["系统", "调试", "事务", "插件", "设置", "编辑器"],
       "aliases": ["system", "系统"],
-      "officialFiles": [
+      "relatedSkills": [
         "reference/system/debug/SKILL.md",
         "reference/system/transaction/SKILL.md",
         "reference/system/plugin/SKILL.md",
@@ -321,7 +321,7 @@
       "skillPath": "reference/component/window-ui/SKILL.md",
       "keywords": ["窗口组件", "点位组件", "视频组件", "ui"],
       "aliases": ["component", "组件"],
-      "officialFiles": [
+      "relatedSkills": [
         "reference/component/poi-ui/SKILL.md",
         "reference/component/video-ui/SKILL.md"
       ]
@@ -332,7 +332,7 @@
       "skillPath": "reference/system/plugin/bimapi/SKILL.md",
       "keywords": ["bim", "dcp", "构件", "楼层", "房间", "剖切", "高亮", "模型树"],
       "aliases": ["bim", "bim-api"],
-      "officialFiles": [
+      "relatedSkills": [
         "reference/system/plugin/bimapi/hierarchy/SKILL.md",
         "reference/system/plugin/bimapi/dcp-save/SKILL.md"
       ]
@@ -343,7 +343,7 @@
       "skillPath": "reference/system/plugin/gisapi/SKILL.md",
       "keywords": ["gis", "地理图层", "3dtiles", "wmts", "wms", "wfs", "矢量"],
       "aliases": ["gis", "gis-api"],
-      "officialFiles": [
+      "relatedSkills": [
         "reference/system/plugin/gisapi/geolayer/SKILL.md",
         "reference/system/plugin/gisapi/3dtiles/SKILL.md",
         "reference/system/plugin/gisapi/wmts/SKILL.md",
@@ -359,7 +359,7 @@
       "skillPath": "reference/system/plugin/wimapi/SKILL.md",
       "keywords": ["wim", "洪水", "管道", "动态水面", "cae", "点云", "色卡"],
       "aliases": ["wim", "wim-api"],
-      "officialFiles": [
+      "relatedSkills": [
         "reference/system/plugin/wimapi/flood/SKILL.md",
         "reference/system/plugin/wimapi/wim-pipe/SKILL.md",
         "reference/system/plugin/wimapi/wim-dynamic-water/SKILL.md",

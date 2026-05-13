@@ -5,7 +5,7 @@
  * - 从远程 Skill Server 拉取 manifest + 文件内容
  * - 三级查找：内置 Skill → 内存缓存 → 远程拉取
  * - 路由引擎：关键词匹配 + 歧义消解 + 场景匹配 + buildWorkflowResponse
- * - 8 个 MCP 工具
+ * - 7 个 MCP 工具
  */
 
 import crypto from 'crypto';
@@ -23,7 +23,7 @@ interface CacheEntry { content: string; timestamp: number; }
 interface SkillEntry { path: string; size: number; sha1: string; }
 interface RouteConfig {
   domain: string; label: string; skillPath: string;
-  keywords: string[]; aliases: string[]; officialFiles: string[];
+  keywords: string[]; aliases: string[]; relatedSkills: string[];
 }
 interface RouteMapping { version: string; routes: RouteConfig[]; baseSkills: string[]; builtinSkills: string[]; }
 interface McpToolDef { name: string; description: string; inputSchema: { type: string; properties: Record<string, any>; required?: string[]; }; }
@@ -174,12 +174,12 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
 
   // 4. 收集所有匹配的 Skill 路径
   const matchedSkills: string[] = [];
-  const requiredOfficialFiles: string[] = [];
+  const requiredRelatedSkills: string[] = [];
 
   if (primaryRoute) {
     matchedSkills.push(primaryRoute.skillPath);
-    for (const f of primaryRoute.officialFiles) {
-      requiredOfficialFiles.push(f);
+    for (const f of primaryRoute.relatedSkills) {
+      requiredRelatedSkills.push(f);
     }
   }
 
@@ -206,15 +206,15 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
   if (primaryRoute) {
     workflowSteps.push(`Step 3: 核心功能 → 读取 ${primaryRoute.skillPath}`);
   }
-  if (requiredOfficialFiles.length > 0) {
-    workflowSteps.push(`Step 4: 官方文档 → 读取 ${requiredOfficialFiles.join(', ')}`);
+  if (requiredRelatedSkills.length > 0) {
+    workflowSteps.push(`Step 4: 关联 Skill → 读取 ${requiredRelatedSkills.join(', ')}`);
   }
 
   return {
     user_requirement: userRequirement,
     project_path: projectPath,
     matched_skills: matchedSkills,
-    required_official_files: requiredOfficialFiles,
+    required_related_skills: requiredRelatedSkills,
     workflow_steps: workflowSteps,
     primary_domain: primaryRoute?.domain || null,
     primary_label: primaryRoute?.label || null,
@@ -223,7 +223,7 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
     disambiguation: disambiguatedDomain || null,
     guidance: isComplex
       ? '⚠️ 检测到复杂任务，建议启用 context-memory 保持跨轮对话状态。请先读取 builtin/wdp-intent-orchestrator.md 了解完整执行流程。'
-      : '请按 workflow_steps 顺序读取对应 Skill 文件，严格遵循 API 签名。',
+      : '🚨 请严格按 workflow_steps 顺序读取所有 Skill 文件，禁止跳过任何步骤。所有 WDP API 的正确签名和参数格式均以 Skill 文件为准，禁止凭记忆编造 API 调用。',
   };
 }
 
@@ -282,7 +282,7 @@ const MCP_TOOL_DEFINITIONS: McpToolDef[] = [
   },
   {
     name: 'enforce_routing_check',
-    description: '校验 AI 已读 Skill 是否覆盖路由结果',
+    description: '🚨 防幻觉核心校验工具：强制 AI 在生成代码前必须读取所有路由匹配的 Skill 文件。未通过此校验前，禁止生成任何 WDP API 代码。Skill 文件包含正确的 API 签名和 demo.js 代码示例，跳过阅读将导致 API 幻觉。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -290,18 +290,6 @@ const MCP_TOOL_DEFINITIONS: McpToolDef[] = [
         skills_read: { type: 'array', items: { type: 'string' }, description: 'AI 已读取的 Skill 路径列表' },
       },
       required: ['workflow_result', 'skills_read'],
-    },
-  },
-  {
-    name: 'enforce_official_docs_read',
-    description: '校验必读官方文档是否已加载',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        required_files: { type: 'array', items: { type: 'object' }, description: '必读文件列表' },
-        files_read: { type: 'array', items: { type: 'string' }, description: 'AI 已读取的文件路径列表' },
-      },
-      required: ['required_files', 'files_read'],
     },
   },
   {
@@ -389,21 +377,9 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
         required_count: required.length,
         read_count: skillsRead.length,
         missing_skills: missing,
-        message: missing.length === 0 ? '✅ 所有必需 Skill 已读取' : `❌ 缺少 ${missing.length} 个 Skill: ${missing.join(', ')}`,
-      };
-    }
-
-    case 'enforce_official_docs_read': {
-      const requiredFiles = (args.required_files || []) as any[];
-      const filesRead = (args.files_read as string[]) || [];
-      const requiredPaths = requiredFiles.map((f: any) => f.path || f);
-      const missing = requiredPaths.filter((p: string) => !filesRead.includes(p));
-      return {
-        passed: missing.length === 0,
-        required_count: requiredPaths.length,
-        read_count: filesRead.length,
-        missing_files: missing,
-        message: missing.length === 0 ? '✅ 所有必需官方文档已读取' : `❌ 缺少 ${missing.length} 个文档: ${missing.join(', ')}`,
+        message: missing.length === 0
+          ? '✅ 所有必需 Skill 已读取，API 签名已确认，可以安全生成代码。'
+          : `🚨 防幻觉阻断：缺少 ${missing.length} 个 Skill 文件未读取。禁止生成代码！这些文件包含正确的 API 签名和参数格式，跳过将导致 API 幻觉。缺失: ${missing.join(', ')}`,
       };
     }
 
@@ -416,12 +392,13 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
         '🔍 生命周期检查：确认初始化 → 渲染 → 清理的完整链路',
         '🔍 初始化顺序检查：Plugin.Install 在 Renderer.Start 之前',
         '🔍 工程基线检查：确认使用 npm install wdpapi（非 CDN）',
+        '🔍 Skill 签名一致性检查：确认所有 API 调用（方法名、参数名、参数类型）与已读 Skill 文件完全一致，禁止凭记忆编造 API',
       ];
       return {
         written_files: writtenFiles,
         used_skills: usedSkills,
         checks,
-        hint: '请逐项检查以上 5 项，发现问题立即修正。',
+        hint: '请逐项检查以上 6 项，发现问题立即修正。禁止凭记忆编造任何 WDP API 调用。',
       };
     }
 
