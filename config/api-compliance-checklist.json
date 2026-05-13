@@ -1,0 +1,66 @@
+{
+  "version": "1.0.0",
+  "description": "API 合规检查清单，供 enforce_* 和 trigger_self_evaluation 使用",
+  "checks": [
+    {
+      "id": "placeholder",
+      "category": "占位符检查",
+      "severity": "error",
+      "description": "确认代码中无 YOUR_URL、YOUR_TOKEN、YOUR_ORDER_ID 等假值",
+      "patterns": ["YOUR_", "TODO:"],
+      "message": "发现占位符，请替换为真值"
+    },
+    {
+      "id": "api-signature",
+      "category": "API 签名检查",
+      "severity": "error",
+      "description": "确认所有 API 调用参数与 Skill 文档一致",
+      "message": "API 参数不匹配，请参照 Skill 文档签名"
+    },
+    {
+      "id": "lifecycle",
+      "category": "生命周期检查",
+      "severity": "error",
+      "description": "确认初始化 → 渲染 → 清理的完整链路",
+      "requiredFlow": ["new WdpApi(config)", "Renderer.Start()", "Renderer.Stop()", "清理函数"],
+      "message": "缺少 初始化/渲染/清理 环节"
+    },
+    {
+      "id": "plugin-order",
+      "category": "初始化顺序检查",
+      "severity": "error",
+      "description": "Plugin.Install 必须在 Renderer.Start 之前执行",
+      "checkPattern": "Plugin.Install 应在 Renderer.Start 之前",
+      "message": "插件安装顺序错误，Plugin.Install 必须在 Renderer.Start 之前"
+    },
+    {
+      "id": "scaffolding",
+      "category": "工程基线检查",
+      "severity": "error",
+      "description": "确认使用 npm install wdpapi（非 CDN 引入）",
+      "checkPattern": "package.json 中有 wdpapi 依赖",
+      "message": "未检测到 wdpapi 依赖，请执行 npm install wdpapi"
+    },
+    {
+      "id": "bim-plugin-version",
+      "category": "BIM 插件版本",
+      "severity": "warning",
+      "description": "BIM 插件版本应为 @wdp-api/bim-api@^2.2.1",
+      "message": "BIM 插件版本不匹配"
+    },
+    {
+      "id": "gis-plugin-version",
+      "category": "GIS 插件版本",
+      "severity": "warning",
+      "description": "GIS 插件版本应为 @wdp-api/gis-api@^2.1.0",
+      "message": "GIS 插件版本不匹配"
+    },
+    {
+      "id": "core-version",
+      "category": "核心 SDK 版本",
+      "severity": "warning",
+      "description": "核心 SDK 版本应为 wdpapi@^2.3.0",
+      "message": "wdpapi 版本不匹配"
+    }
+  ]
+}

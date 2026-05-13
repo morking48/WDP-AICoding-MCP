@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment variables
+.env
+
+# Logs & data
+logs/
+*.log
+data/
+
+# Local development
+LAN_TEST_GUIDE.md
+start-server.bat
+DEVELOPMENT_PLAN.md
+ACTION_GUIDE.md
+README.md
+
+# Client (distributed separately)
+client/
+
+# Reference docs (fetched from remote)
+reference/
+
+# Temp & archives
+temp-check-repo/
+*.zip
