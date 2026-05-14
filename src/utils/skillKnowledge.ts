@@ -207,7 +207,21 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
   // 2. 歧义消解
   const disambiguatedDomain = applyDisambiguation(userRequirement, keywordResults);
 
-  // 3. 确定主路由
+  // 3. 场景模板匹配（优先于关键词路由，旧版架构核心逻辑）
+  let scene = matchScene(userRequirement);
+
+  // 3b. 关键词路由命中后，通过 sceneId 强绑定场景（旧版 sceneId 字段生效）
+  if (!scene && keywordResults.length > 0) {
+    const topRoute = mapping.routes.find(r => r.domain === keywordResults[0].domain);
+    if (topRoute && (topRoute as any).sceneId) {
+      const idx = loadSceneIndex();
+      if (idx) {
+        scene = idx.scenarios.find(s => s.id === (topRoute as any).sceneId) || null;
+      }
+    }
+  }
+
+  // 4. 确定主路由：场景命中 → 场景为主裁判；否则关键词兜底
   let primaryRoute: RouteConfig | undefined;
   if (disambiguatedDomain) {
     primaryRoute = mapping.routes.find(r => r.domain === disambiguatedDomain);
@@ -216,40 +230,45 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
     primaryRoute = mapping.routes.find(r => r.domain === keywordResults[0].domain);
   }
 
-  // 4. 收集所有匹配的 Skill 路径
+  // 5. 收集所有匹配的 Skill 路径
   const matchedSkills: string[] = [];
   const requiredRelatedSkills: string[] = [];
 
-  if (primaryRoute) {
-    matchedSkills.push(primaryRoute.skillPath);
-    for (const f of primaryRoute.relatedSkills) {
-      requiredRelatedSkills.push(f);
+  // 场景命中 → 场景的 primary_skills 作为主路由 Skill
+  if (scene) {
+    for (const sp of scene.primary_skills) {
+      if (!matchedSkills.includes(sp)) matchedSkills.push(sp);
+    }
+    for (const sp of scene.secondary_skills) {
+      if (!matchedSkills.includes(sp)) matchedSkills.push(sp);
     }
   }
 
-  // 5. 添加 baseSkills
+  // 关键词路由的 Skill（场景未覆盖时补充）
+  if (primaryRoute) {
+    if (!matchedSkills.includes(primaryRoute.skillPath)) {
+      matchedSkills.push(primaryRoute.skillPath);
+    }
+    for (const f of primaryRoute.relatedSkills) {
+      if (!requiredRelatedSkills.includes(f)) requiredRelatedSkills.push(f);
+    }
+  }
+
+  // 6. 添加 baseSkills
   for (const bs of mapping.baseSkills) {
     if (!matchedSkills.includes(bs)) matchedSkills.push(bs);
   }
 
-  // 6. 始终加载内置 Skill（context-memory 对简单/复杂任务均必需）
+  // 7. 始终加载内置 Skill
   for (const bs of mapping.builtinSkills) {
     if (!matchedSkills.includes(bs)) matchedSkills.push(bs);
   }
   const isComplex = keywordResults.length > 3 || userRequirement.length > 50;
 
-  // 7. 场景模板匹配
-  const scene = matchScene(userRequirement);
-  let sceneSkills: string[] = [];
-  if (scene) {
-    sceneSkills = [...scene.primary_skills, ...scene.secondary_skills].filter(s => s && !matchedSkills.includes(s));
-    for (const ss of sceneSkills) matchedSkills.push(ss);
-  }
-
   // 8. API 模式匹配
   const patterns = loadApiPatterns();
   let matchedPatterns: any[] = [];
-  if (patterns.length > 0 && primaryRoute) {
+  if (patterns.length > 0) {
     matchedPatterns = patterns.filter((p: any) =>
       p.skill_sequence && p.skill_sequence.some((sp: string) => matchedSkills.includes(sp)));
     matchedPatterns = matchedPatterns.slice(0, 2);
@@ -257,14 +276,23 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
 
   // 9. 构建工作流步骤
   const workflowSteps: string[] = [];
-  if (isComplex) workflowSteps.push('Step 0: 长流程判断 → 启用 context-memory');
   if (scene) workflowSteps.push(`🎯 场景: ${scene.name} — ${scene.goal}`);
+  if (isComplex) workflowSteps.push('Step 0: 长流程判断 → 启用 context-memory');
   workflowSteps.push('Step 1: 意图编排 → 读取 builtin/wdp-intent-orchestrator.md');
   workflowSteps.push('Step 2: 初始化 → 读取 reference/initialization/SKILL.md');
-  if (primaryRoute) workflowSteps.push(`Step 3: 核心功能 → 读取 ${primaryRoute.skillPath}`);
+  if (primaryRoute && !scene) workflowSteps.push(`Step 3: 核心功能 → 读取 ${primaryRoute.skillPath}`);
+  if (scene) workflowSteps.push(`Step 3: 场景核心 Skill → 读取 ${scene.primary_skills.join(', ')}`);
   if (requiredRelatedSkills.length > 0) workflowSteps.push(`Step 4: 关联 Skill → 读取 ${requiredRelatedSkills.join(', ')}`);
-  if (sceneSkills.length > 0) workflowSteps.push(`Step 5: 场景 Skill → 读取 ${sceneSkills.join(', ')}`);
+  if (scene && scene.secondary_skills.length > 0) workflowSteps.push(`Step 5: 场景辅助 Skill → 读取 ${scene.secondary_skills.join(', ')}`);
   if (matchedPatterns.length > 0) workflowSteps.push(`Step 6: API 调用模式 → ${matchedPatterns.map((p: any) => p.name).join(', ')}`);
+
+  // 10. 构建 guidance（场景命中时注入场景信息到头部）
+  const sceneGuidance = scene
+    ? `🎯 当前场景：${scene.name} — ${scene.goal}\n`
+    : '';
+  const baseGuidance = isComplex
+    ? '⚠️ 检测到复杂任务，建议启用 context-memory 保持跨轮对话状态。请先读取 builtin/wdp-intent-orchestrator.md 了解完整执行流程。🚨 在获取关键业务参数后，必须调用 write_context_state 保存到本地缓存。'
+    : '🚨 请严格按 workflow_steps 顺序读取所有 Skill 文件，禁止跳过任何步骤。所有 WDP API 的正确签名和参数格式均以 Skill 文件为准，禁止凭记忆编造 API 调用。🚨 在获取关键业务参数后，必须调用 write_context_state 保存到本地缓存。';
 
   return {
     user_requirement: userRequirement,
@@ -279,10 +307,9 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
     disambiguation: disambiguatedDomain || null,
     scene: scene ? { id: scene.id, name: scene.name, goal: scene.goal } : null,
     api_patterns: matchedPatterns,
-    // 上下文记忆注入：System 层（路由缓存，客户端自动维护）& Business 层（业务参数，客户端拦截读取后注入）
     activeContext: {
       layer: 'system',
-      summary: `当前任务：${primaryRoute?.label || '未匹配'} | 关键 Skill: ${primaryRoute?.skillPath || '无'}`,
+      summary: `当前任务：${scene?.name || primaryRoute?.label || '未匹配'} | 关键 Skill: ${primaryRoute?.skillPath || '无'}`,
       data: {
         matchedSkills,
         requiredRelatedSkills,
@@ -294,9 +321,7 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
       layer: 'business',
       hint: '【业务参数记忆】IDE 客户端将从本地 .wdp-cache/context-memory/business.json 读取并注入。若为空，说明尚无业务缓存。请调用 read_context_state(layer="business") 检查。',
     },
-    guidance: isComplex
-      ? '⚠️ 检测到复杂任务，建议启用 context-memory 保持跨轮对话状态。请先读取 builtin/wdp-intent-orchestrator.md 了解完整执行流程。🚨 在获取关键业务参数后，必须调用 write_context_state 保存到本地缓存。'
-      : '🚨 请严格按 workflow_steps 顺序读取所有 Skill 文件，禁止跳过任何步骤。所有 WDP API 的正确签名和参数格式均以 Skill 文件为准，禁止凭记忆编造 API 调用。🚨 在获取关键业务参数后，必须调用 write_context_state 保存到本地缓存。',
+    guidance: sceneGuidance + baseGuidance,
   };
 }
 
