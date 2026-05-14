@@ -99,7 +99,7 @@ async function readKnowledgeFile(filePath: string): Promise<string> {
 function listKnowledgeEntries(): SkillEntry[] {
   const entries: SkillEntry[] = [];
   for (const [p, f] of manifestCache) {
-    if (p.startsWith('reference/') && p.endsWith('SKILL.md')) entries.push({ path: p, size: f.size, sha1: f.sha1 });
+    if (p.startsWith('reference/')) entries.push({ path: p, size: f.size, sha1: f.sha1 });
   }
   for (const [p] of builtinSkills) entries.push({ path: p, size: 0, sha1: '' });
   return entries;
@@ -345,12 +345,12 @@ const MCP_TOOL_DEFINITIONS: McpToolDef[] = [
     },
   },
   {
-    name: 'get_skill_content',
-    description: '按路径获取 Skill 文件内容。支持摘要模式（默认）和全文模式',
+    name: 'read_knowledge_file',
+    description: '按路径读取知识库任意文件（.md Skill / .js demo / .json 配置等）。支持摘要模式（默认）和全文模式',
     inputSchema: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: 'Skill 文件路径' },
+        path: { type: 'string', description: '知识库文件路径' },
         force_full: { type: 'boolean', description: '是否强制返回全文' },
       },
       required: ['path'],
@@ -424,7 +424,7 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
       return buildWorkflowResponse(userRequirement, projectPath);
     }
 
-    case 'get_skill_content': {
+    case 'read_knowledge_file': {
       const filePath = args.path as string;
       if (!filePath) return { error: '缺少 path 参数' };
       try {
@@ -446,7 +446,7 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
       const skillPath = args.skill_path as string | undefined;
       const results: SkillEntry[] = [];
       for (const [p, f] of manifestCache) {
-        if (!p.startsWith('reference/') || !p.endsWith('SKILL.md')) continue;
+        if (!p.startsWith('reference/')) continue;
         if (skillPath && !p.includes(skillPath)) continue;
         if (p.toLowerCase().includes(query)) results.push({ path: p, size: f.size, sha1: f.sha1 });
       }
