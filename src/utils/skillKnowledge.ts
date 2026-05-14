@@ -201,40 +201,37 @@ function applyDisambiguation(requirement: string, keywordResults: { domain: stri
 function buildWorkflowResponse(userRequirement: string, projectPath: string): any {
   const mapping = loadRouteMapping();
 
-  // 1. 关键词匹配
-  const keywordResults = matchKeywords(userRequirement);
-
-  // 2. 歧义消解
-  const disambiguatedDomain = applyDisambiguation(userRequirement, keywordResults);
-
-  // 3. 场景模板匹配（优先于关键词路由，旧版架构核心逻辑）
+  // 1. 场景模板匹配（优先执行，场景=主裁判，旧版架构核心逻辑）
   let scene = matchScene(userRequirement);
 
-  // 3b. 关键词路由命中后，通过 sceneId 强绑定场景（旧版 sceneId 字段生效）
-  if (!scene && keywordResults.length > 0) {
-    const topRoute = mapping.routes.find(r => r.domain === keywordResults[0].domain);
-    if (topRoute && (topRoute as any).sceneId) {
-      const idx = loadSceneIndex();
-      if (idx) {
-        scene = idx.scenarios.find(s => s.id === (topRoute as any).sceneId) || null;
-      }
+  // 2. 场景命中 → 场景为主路由，跳过关键词匹配；场景未命中 → 关键词加权兜底
+  let keywordResults: { domain: string; score: number }[] = [];
+  let disambiguatedDomain: string | null = null;
+  let primaryRoute: RouteConfig | undefined;
+
+  if (scene) {
+    // 场景命中：直接使用场景的 primary_skills，不再浪费 CPU 做关键词匹配
+    // 从 skill-route-mapping 中匹配 primary_skills[0] 对应的路由（获取 relatedSkills）
+    const firstSceneSkill = scene.primary_skills[0] || '';
+    primaryRoute = mapping.routes.find(r => r.skillPath === firstSceneSkill);
+  } else {
+    // 场景未命中 → 关键词加权兜底
+    keywordResults = matchKeywords(userRequirement);
+    disambiguatedDomain = applyDisambiguation(userRequirement, keywordResults);
+
+    if (disambiguatedDomain) {
+      primaryRoute = mapping.routes.find(r => r.domain === disambiguatedDomain);
+    }
+    if (!primaryRoute && keywordResults.length > 0) {
+      primaryRoute = mapping.routes.find(r => r.domain === keywordResults[0].domain);
     }
   }
 
-  // 4. 确定主路由：场景命中 → 场景为主裁判；否则关键词兜底
-  let primaryRoute: RouteConfig | undefined;
-  if (disambiguatedDomain) {
-    primaryRoute = mapping.routes.find(r => r.domain === disambiguatedDomain);
-  }
-  if (!primaryRoute && keywordResults.length > 0) {
-    primaryRoute = mapping.routes.find(r => r.domain === keywordResults[0].domain);
-  }
-
-  // 5. 收集所有匹配的 Skill 路径
+  // 3. 收集所有匹配的 Skill 路径
   const matchedSkills: string[] = [];
   const requiredRelatedSkills: string[] = [];
 
-  // 场景命中 → 场景的 primary_skills 作为主路由 Skill
+  // 场景命中 → 场景的 primary_skills + secondary_skills 直接作为主 Skill 列表
   if (scene) {
     for (const sp of scene.primary_skills) {
       if (!matchedSkills.includes(sp)) matchedSkills.push(sp);
@@ -254,18 +251,18 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
     }
   }
 
-  // 6. 添加 baseSkills
+  // 4. 添加 baseSkills
   for (const bs of mapping.baseSkills) {
     if (!matchedSkills.includes(bs)) matchedSkills.push(bs);
   }
 
-  // 7. 始终加载内置 Skill
+  // 5. 始终加载内置 Skill
   for (const bs of mapping.builtinSkills) {
     if (!matchedSkills.includes(bs)) matchedSkills.push(bs);
   }
   const isComplex = keywordResults.length > 3 || userRequirement.length > 50;
 
-  // 8. API 模式匹配
+  // 6. API 模式匹配
   const patterns = loadApiPatterns();
   let matchedPatterns: any[] = [];
   if (patterns.length > 0) {
@@ -274,7 +271,7 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
     matchedPatterns = matchedPatterns.slice(0, 2);
   }
 
-  // 9. 构建工作流步骤
+  // 7. 构建工作流步骤
   const workflowSteps: string[] = [];
   if (scene) workflowSteps.push(`🎯 场景: ${scene.name} — ${scene.goal}`);
   if (isComplex) workflowSteps.push('Step 0: 长流程判断 → 启用 context-memory');
@@ -286,7 +283,7 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
   if (scene && scene.secondary_skills.length > 0) workflowSteps.push(`Step 5: 场景辅助 Skill → 读取 ${scene.secondary_skills.join(', ')}`);
   if (matchedPatterns.length > 0) workflowSteps.push(`Step 6: API 调用模式 → ${matchedPatterns.map((p: any) => p.name).join(', ')}`);
 
-  // 10. 构建 guidance（场景命中时注入场景信息到头部）
+  // 8. 构建 guidance（场景命中时注入场景信息到头部）
   const sceneGuidance = scene
     ? `🎯 当前场景：${scene.name} — ${scene.goal}\n`
     : '';
