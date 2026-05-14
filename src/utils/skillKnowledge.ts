@@ -271,7 +271,6 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
     project_path: projectPath,
     matched_skills: matchedSkills,
     required_related_skills: requiredRelatedSkills,
-    required_official_files: requiredRelatedSkills,  // 客户端字段名兼容
     workflow_steps: workflowSteps,
     primary_domain: primaryRoute?.domain || null,
     primary_label: primaryRoute?.label || null,
