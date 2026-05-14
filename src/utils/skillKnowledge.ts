@@ -232,13 +232,11 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
     if (!matchedSkills.includes(bs)) matchedSkills.push(bs);
   }
 
-  // 6. 复杂任务检测
-  const isComplex = keywordResults.length > 3 || userRequirement.length > 50;
-  if (isComplex) {
-    for (const bs of mapping.builtinSkills) {
-      if (!matchedSkills.includes(bs)) matchedSkills.push(bs);
-    }
+  // 6. 始终加载内置 Skill（context-memory 对简单/复杂任务均必需）
+  for (const bs of mapping.builtinSkills) {
+    if (!matchedSkills.includes(bs)) matchedSkills.push(bs);
   }
+  const isComplex = keywordResults.length > 3 || userRequirement.length > 50;
 
   // 7. 场景模板匹配
   const scene = matchScene(userRequirement);
@@ -273,6 +271,7 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
     project_path: projectPath,
     matched_skills: matchedSkills,
     required_related_skills: requiredRelatedSkills,
+    required_official_files: requiredRelatedSkills,  // 客户端字段名兼容
     workflow_steps: workflowSteps,
     primary_domain: primaryRoute?.domain || null,
     primary_label: primaryRoute?.label || null,
