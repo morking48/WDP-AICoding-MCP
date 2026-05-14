@@ -281,7 +281,6 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
   // 7. 构建工作流步骤
   const workflowSteps: string[] = [];
   if (scene) workflowSteps.push(`🎯 场景: ${scene.name} — ${scene.goal}`);
-  if (isComplex) workflowSteps.push('Step 0: 长流程判断 → 启用 context-memory');
   workflowSteps.push('Step 1: 意图编排 → 读取 builtin/wdp-intent-orchestrator.md');
   workflowSteps.push('Step 2: 初始化 → 读取 reference/initialization/SKILL.md');
   if (primaryRoute && !scene) workflowSteps.push(`Step 3: 核心功能 → 读取 ${primaryRoute.skillPath}`);
@@ -294,9 +293,7 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
   const sceneGuidance = scene
     ? `🎯 当前场景：${scene.name} — ${scene.goal}\n`
     : '';
-  const baseGuidance = isComplex
-    ? '⚠️ 检测到复杂任务，建议启用 context-memory 保持跨轮对话状态。请先读取 builtin/wdp-intent-orchestrator.md 了解完整执行流程。🚨 在获取关键业务参数后，必须调用 write_context_state 保存到本地缓存。'
-    : '🚨 请严格按 workflow_steps 顺序读取所有 Skill 文件，禁止跳过任何步骤。所有 WDP API 的正确签名和参数格式均以 Skill 文件为准，禁止凭记忆编造 API 调用。🚨 在获取关键业务参数后，必须调用 write_context_state 保存到本地缓存。';
+  const baseGuidance = '🚨 请严格按 workflow_steps 顺序读取所有 Skill 文件，禁止跳过任何步骤。所有 WDP API 的正确签名和参数格式均以 Skill 文件为准，禁止凭记忆编造 API 调用。';
 
   return {
     user_requirement: userRequirement,
@@ -312,20 +309,6 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
     scene: scene ? { id: scene.id, name: scene.name, goal: scene.goal } : null,
     api_patterns: matchedPatterns,
     builtin_skills_preview: builtinContentPreviews,
-    activeContext: {
-      layer: 'system',
-      summary: `当前任务：${scene?.name || primaryRoute?.label || '未匹配'} | 关键 Skill: ${primaryRoute?.skillPath || '无'}`,
-      data: {
-        matchedSkills,
-        requiredRelatedSkills,
-        keywords: keywordResults.slice(0, 5).map(k => k.domain),
-      },
-      hint: '【架构记忆】这是本地缓存的原始设计意图，若后续步骤产生幻觉，请优先以此为准。若丢失路由，调用 read_context_state(layer="system") 恢复。',
-    },
-    _business_context: {
-      layer: 'business',
-      hint: '【业务参数记忆】IDE 客户端将从本地 .wdp-cache/context-memory/business.json 读取并注入。若为空，说明尚无业务缓存。请调用 read_context_state(layer="business") 检查。',
-    },
     guidance: sceneGuidance + baseGuidance,
   };
 }
@@ -496,13 +479,12 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
         '🔍 初始化顺序检查：Plugin.Install 在 Renderer.Start 之前',
         '🔍 工程基线检查：确认使用 npm install wdpapi（非 CDN）',
         '🔍 Skill 签名一致性检查：确认所有 API 调用（方法名、参数名、参数类型）与已读 Skill 文件完全一致，禁止凭记忆编造 API',
-        '🔍 上下文持久化检查：确认已调用 write_context_state 保存关键业务参数（URL、Token、模型ID、坐标等），确保跨轮对话不丢失',
       ];
       return {
         written_files: writtenFiles,
         used_skills: usedSkills,
         checks,
-        hint: '请逐项检查以上 7 项，发现问题立即修正。禁止凭记忆编造任何 WDP API 调用。务必确认上下文已保存。',
+        hint: '请逐项检查以上 6 项，发现问题立即修正。禁止凭记忆编造任何 WDP API 调用。',
       };
     }
 
@@ -516,7 +498,7 @@ export async function initSkillKnowledge(): Promise<void> {
   await fetchSkillsManifest();
   // 加载内置 Skill
   const builtinDir = path.resolve(__dirname, '../../builtin');
-  const builtinFiles = ['wdp-context-memory.md', 'wdp-intent-orchestrator.md'];
+  const builtinFiles = ['wdp-intent-orchestrator.md'];
   for (const file of builtinFiles) {
     const filePath = path.join(builtinDir, file);
     if (fs.existsSync(filePath)) {

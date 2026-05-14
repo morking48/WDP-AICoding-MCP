@@ -768,7 +768,6 @@
                        "reference/_shared/object-base.md"
                    ],
     "builtinSkills":  [
-                          "builtin/wdp-context-memory.md",
-                          "builtin/wdp-intent-orchestrator.md"
-                      ]
+                           "builtin/wdp-intent-orchestrator.md"
+                       ]
 }

@@ -19,6 +19,7 @@ start-server.bat
 DEVELOPMENT_PLAN.md
 ACTION_GUIDE.md
 README.md
+MEMORY_CLEANUP_PLAN.md
 
 # Client (distributed separately)
 client/

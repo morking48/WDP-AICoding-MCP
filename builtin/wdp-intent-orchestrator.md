@@ -1,6 +1,6 @@
 ---
 name: wdp-intent-orchestrator
-description: WDP 意图编排与需求精确化。用于在编码前把自然语言业务诉求整理成《系统意图与架构设计报告》，完成需求拆解、能力路由、前置参数核查、清理链路补全和长流程状态管理判断。
+description: WDP 意图编排与需求精确化。用于在编码前把自然语言业务诉求整理成《系统意图与架构设计报告》，完成需求拆解、能力路由、前置参数核查、清理链路补全。
 ---
 
 # WDP 意图编排技能
@@ -25,19 +25,11 @@ description: WDP 意图编排与需求精确化。用于在编码前把自然语
 **返回结果中的关键字段**：
 - `matched_skills` — 所有需要读取的 Skill 文件路径列表（场景优先排序）
 - `workflow_steps` — **权威执行步骤**，请严格按此顺序执行
-- `builtin_skills_preview` — 内置 Skill（本文档 + `wdp-context-memory.md`）的前 1500 字内容预览，已自动注入
+- `builtin_skills_preview` — 内置 Skill（本文档）的前 1500 字内容预览，已自动注入
 - `scene` — 命中的业务场景（名称 + 目标描述）
 - `api_patterns` — 匹配的 API 调用模式（`api_sequence + data_flow + notes`）
 
 ## 执行流程（严格顺序）
-
-### Step 0: 长流程判断
-
-`wdp-context-memory.md` 内容已通过 `builtin_skills_preview` 自动注入。请参考其内容：
-
-- 如果符合长流程条件（超过 5 步 / 跨多个 Skill / 跨多轮对话），参考其中的双层架构说明
-- System 层缓存由 Server/客户端自动维护，你无需主动操作
-- 获取关键业务参数后，必须调用客户端本地工具 `write_context_state` 保存到 Business 层
 
 ### Step 1-6: 按 `workflow_steps` 执行
 
@@ -63,15 +55,14 @@ description: WDP 意图编排与需求精确化。用于在编码前把自然语
 | BIM 插件 | `@wdp-api/bim-api@^2.2.1` |
 | GIS 插件 | `@wdp-api/gis-api@^2.1.0` |
 
-## 阻断性要求（7条）
+## 阻断性要求（6条）
 
-1. **长流程必须用 context-memory**：超过 5 步或跨 skill 的任务，必须保存关键业务参数
-2. **路由结果已由 start_wdp_workflow 提供**：以 `matched_skills` + `workflow_steps` 为准，不要手动重新路由
-3. **必须读取 initialization**：`reference/initialization/SKILL.md`
-4. **Plugin.Install 必须在 Renderer.Start 之前**
-5. **核心参数不得为假值**：禁止 YOUR_URL、YOUR_TOKEN 等占位符
-6. **必须使用 npm install wdpapi**：禁止 CDN 引入
-7. **缺信息时先问，不要猜**
+1. **路由结果已由 start_wdp_workflow 提供**：以 `matched_skills` + `workflow_steps` 为准，不要手动重新路由
+2. **必须读取 initialization**：`reference/initialization/SKILL.md`
+3. **Plugin.Install 必须在 Renderer.Start 之前**
+4. **核心参数不得为假值**：禁止 YOUR_URL、YOUR_TOKEN 等占位符
+5. **必须使用 npm install wdpapi**：禁止 CDN 引入
+6. **缺信息时先问，不要猜**
 
 ## 工作流
 
@@ -107,7 +98,7 @@ description: WDP 意图编排与需求精确化。用于在编码前把自然语
 #### 对象门禁
 - 先确认对象类别，再确认对象 Id
 - 如果只有 Id 没有对象类别，先报缺口
-- 对象 Id 的合法来源：创建返回值、屏幕拾取结果、事件回调结果、实体查询结果、BIM 构件查询结果、GIS 要素点击或属性查询结果、平台资源发布信息、outliner 遍历结果、context-memory Business 层缓存快照
+- 对象 Id 的合法来源：创建返回值、屏幕拾取结果、事件回调结果、实体查询结果、BIM 构件查询结果、GIS 要素点击或属性查询结果、平台资源发布信息、outliner 遍历结果
 
 #### 动作门禁
 如果需求包含以下动作，必须显式写出原生 API 能力：
@@ -131,7 +122,6 @@ description: WDP 意图编排与需求精确化。用于在编码前把自然语
 6. **缺失输入**：需要用户补充的信息
 7. **对象信息**：对象类别、Id、Id来源
 8. **清理链路**：创建动作与清理动作的对应关系
-9. **状态管理判断**：是否启用 `wdp-context-memory`
 
 ## 质量底线
 
@@ -139,5 +129,4 @@ description: WDP 意图编排与需求精确化。用于在编码前把自然语
 2. 先确认对象类别，再确认对象 Id
 3. 先确认 Id 来源，再决定后续 API
 4. 先确认进入链路，再补清理链路
-5. 长流程任务必须挂上 `wdp-context-memory`
-6. 缺信息时先问，不要猜
+5. 缺信息时先问，不要猜
