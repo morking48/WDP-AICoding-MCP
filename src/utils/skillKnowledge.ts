@@ -5,7 +5,6 @@
  * - 从远程 Skill Server 拉取 manifest + 文件内容
  * - 三级查找：内置 Skill → 内存缓存 → 远程拉取
  * - 路由引擎：关键词匹配 + 歧义消解 + 场景匹配 + buildWorkflowResponse
- * - 上下文记忆由客户端本地工具实现（write_context_state / read_context_state）
  * - 7 个 MCP 工具
  */
 
