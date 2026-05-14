@@ -61,6 +61,7 @@ function authMiddleware(req: express.Request, res: express.Response, next: expre
   }
 
   (req as any).userToken = token;
+  (req as any).userName = result.userName || 'anonymous';
   next();
 }
 
@@ -89,11 +90,13 @@ app.get('/health', (_req, res) => {
 
 // 获取工具列表
 app.get('/mcp/tools', authMiddleware, (req, res) => {
-  const sessionId = getOrCreateSessionId(req.ip || 'unknown', 'anonymous');
+  const userName = (req as any).userName || 'anonymous';
+  const sessionId = getOrCreateSessionId(req.ip || 'unknown', userName);
   logAccess({
     sessionId,
     ip: req.ip,
     action: 'LIST_TOOLS',
+    userName,
     userAgent: req.headers['user-agent'] as string,
   });
   res.json({ tools: getMcpToolDefinitions() });
@@ -103,7 +106,8 @@ app.get('/mcp/tools', authMiddleware, (req, res) => {
 app.post('/mcp/call', authMiddleware, async (req, res) => {
   const startTime = Date.now();
   const { tool, arguments: args } = req.body;
-  const sessionId = getOrCreateSessionId(req.ip || 'unknown', 'anonymous');
+  const userName = (req as any).userName || 'anonymous';
+  const sessionId = getOrCreateSessionId(req.ip || 'unknown', userName);
 
   if (!tool) {
     logError({
@@ -111,6 +115,7 @@ app.post('/mcp/call', authMiddleware, async (req, res) => {
       errorCategory: 'INVALID_REQUEST',
       severity: 'low',
       errorMessage: '缺少 tool 参数',
+      userName,
       context: {},
       recoverable: true,
       userImpact: '请求被拒绝',
@@ -140,6 +145,7 @@ app.post('/mcp/call', authMiddleware, async (req, res) => {
         sessionId,
         clientIp: req.ip || 'unknown',
         rawInput: args?.user_requirement || '',
+        userName,
         detectedKeywords: result.matched_keywords || [],
         routedSkills: result.matched_skills || [],
         confidence: result.confidence || 1.0,
@@ -151,6 +157,7 @@ app.post('/mcp/call', authMiddleware, async (req, res) => {
     const isActMode = userInput.includes('开始编码') || userInput.includes('编码');
     logConversation({
       sessionId,
+      userName,
       userInput,
       toolName: tool,
       toolArgs: args || {},
@@ -164,6 +171,7 @@ app.post('/mcp/call', authMiddleware, async (req, res) => {
       sessionId,
       ip: req.ip,
       action: 'MCP_TOOL_CALL',
+      userName,
       tool,
       responseTimeMs: Date.now() - startTime,
       userAgent: req.headers['user-agent'] as string,
@@ -176,6 +184,7 @@ app.post('/mcp/call', authMiddleware, async (req, res) => {
       errorCategory: 'TOOL_CALL_ERROR',
       severity: 'high',
       errorMessage: error.message || '工具调用失败',
+      userName,
       context: { userInput: tool },
       recoverable: true,
       userImpact: '工具调用失败',
@@ -185,6 +194,7 @@ app.post('/mcp/call', authMiddleware, async (req, res) => {
       sessionId,
       ip: req.ip,
       action: 'MCP_TOOL_CALL_ERROR',
+      userName,
       tool,
       error: error.message,
       responseTimeMs: Date.now() - startTime,

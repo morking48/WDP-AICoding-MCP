@@ -241,7 +241,7 @@ export function isTokenDisabled(token: string): boolean {
 /**
  * 检查Token是否有效
  */
-export function verifyTokenAccess(token: string): { valid: boolean; reason?: string } {
+export function verifyTokenAccess(token: string): { valid: boolean; reason?: string; userName?: string } {
   const info = TOKEN_STORE.get(token);
   if (!info) return { valid: false, reason: '无效的Token' };
   
@@ -249,7 +249,7 @@ export function verifyTokenAccess(token: string): { valid: boolean; reason?: str
     return { valid: false, reason: 'Token已被禁用' };
   }
   
-  return { valid: true };
+  return { valid: true, userName: info.name };
 }
 
 /**
