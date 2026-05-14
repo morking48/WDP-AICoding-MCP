@@ -256,9 +256,16 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
     if (!matchedSkills.includes(bs)) matchedSkills.push(bs);
   }
 
-  // 5. 始终加载内置 Skill
+  // 5. 始终加载内置 Skill，并自动注入内容（对齐旧版"推送"模式，AI 无需手动 get_skill_content）
+  const builtinContentPreviews: Array<{ path: string; preview: string }> = [];
   for (const bs of mapping.builtinSkills) {
     if (!matchedSkills.includes(bs)) matchedSkills.push(bs);
+    // 自动读取内置 Skill 内容并注入 preview
+    if (builtinSkills.has(bs)) {
+      const raw = builtinSkills.get(bs)!;
+      const excerpt = raw.substring(0, 1500); // 前 1500 字（约 2KB），避免撑爆上下文
+      builtinContentPreviews.push({ path: bs, preview: excerpt });
+    }
   }
   const isComplex = keywordResults.length > 3 || userRequirement.length > 50;
 
@@ -304,6 +311,7 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
     disambiguation: disambiguatedDomain || null,
     scene: scene ? { id: scene.id, name: scene.name, goal: scene.goal } : null,
     api_patterns: matchedPatterns,
+    builtin_skills_preview: builtinContentPreviews,
     activeContext: {
       layer: 'system',
       summary: `当前任务：${scene?.name || primaryRoute?.label || '未匹配'} | 关键 Skill: ${primaryRoute?.skillPath || '无'}`,
