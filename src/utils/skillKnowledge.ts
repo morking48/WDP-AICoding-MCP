@@ -13,7 +13,7 @@ import fs from 'fs';
 import path from 'path';
 
 // ========== 配置 ==========
-const SKILL_SERVER_URL = process.env.SKILL_SERVER_URL || 'http://10.21.0.7:38000';
+const SKILL_SERVER_URL = process.env.SKILL_SERVER_URL || 'http://wdpapi-skill.51aes.com';
 const CACHE_TTL = Number(process.env.CACHE_TTL) || 300;
 
 // ========== 类型 ==========
