@@ -5,8 +5,8 @@
  * - 从远程 Skill Server 拉取 manifest + 文件内容
  * - 三级查找：内置 Skill → 内存缓存 → 远程拉取
  * - 路由引擎：关键词匹配 + 歧义消解 + 场景匹配 + buildWorkflowResponse
- * - 上下文记忆：write_context_state / read_context_state（客户端拦截执行实际 I/O）
- * - 9 个 MCP 工具
+ * - 上下文记忆由客户端本地工具实现（write_context_state / read_context_state）
+ * - 7 个 MCP 工具
  */
 
 import crypto from 'crypto';
@@ -380,31 +380,6 @@ const MCP_TOOL_DEFINITIONS: McpToolDef[] = [
       required: ['written_files', 'used_skills'],
     },
   },
-  {
-    name: 'write_context_state',
-    description: '💾 写入上下文记忆：将关键业务参数（URL、Token、模型ID、坐标等）保存到本地缓存，跨轮对话自动继承。由 IDE 客户端拦截并执行实际文件 I/O，写入 {projectPath}/.wdp-cache/context-memory/',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        projectPath: { type: 'string', description: '用户项目根路径' },
-        layer: { type: 'string', description: '固定传 "business"。System 层由客户端自动维护。' },
-        data: { type: 'object', description: '要保存的业务关键数据（如 coreConfig、targetEid、坐标参数等）' },
-      },
-      required: ['projectPath', 'layer', 'data'],
-    },
-  },
-  {
-    name: 'read_context_state',
-    description: '📖 读取上下文记忆：从本地缓存恢复之前的业务参数或路由信息。由 IDE 客户端拦截并执行实际文件 I/O，从 {projectPath}/.wdp-cache/context-memory/ 读取。在跨轮对话中丢失关键参数时优先调用此工具，禁止重复询问用户。',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        projectPath: { type: 'string', description: '用户项目根路径' },
-        layer: { type: 'string', description: '"system"（路由缓存）或 "business"（业务参数）' },
-      },
-      required: ['projectPath', 'layer'],
-    },
-  },
 ];
 
 export function getMcpToolDefinitions(): McpToolDef[] {
@@ -480,36 +455,6 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
         message: missing.length === 0
           ? '✅ 所有必需 Skill 已读取，API 签名已确认，可以安全生成代码。'
           : `🚨 防幻觉阻断：缺少 ${missing.length} 个 Skill 文件未读取。禁止生成代码！这些文件包含正确的 API 签名和参数格式，跳过将导致 API 幻觉。缺失: ${missing.join(', ')}`,
-      };
-    }
-
-    case 'write_context_state': {
-      const ctxProjectPath = args.projectPath as string;
-      const layer = args.layer as string;
-      const data = args.data as Record<string, any>;
-      if (!ctxProjectPath || !layer || !data) return { error: '缺少 projectPath、layer 或 data 参数' };
-      // MCP Server 不执行实际文件 I/O（无法访问用户本地路径）。
-      // 返回确认信息，由 IDE 客户端拦截并写入 {projectPath}/.wdp-cache/context-memory/{layer}.json
-      return {
-        saved: true,
-        layer,
-        projectPath: ctxProjectPath,
-        keys: Object.keys(data),
-        hint: '✅ 上下文已保存。下次调用 start_wdp_workflow 时将自动注入 _business_context。IDE 客户端负责将数据写入本地文件。',
-      };
-    }
-
-    case 'read_context_state': {
-      const ctxProjectPath = args.projectPath as string;
-      const layer = args.layer as string;
-      if (!ctxProjectPath || !layer) return { error: '缺少 projectPath 或 layer 参数' };
-      // MCP Server 不执行实际文件 I/O（无法访问用户本地路径）。
-      // 返回提示，由 IDE 客户端拦截并从 {projectPath}/.wdp-cache/context-memory/{layer}.json 读取后注入
-      return {
-        read: true,
-        layer,
-        projectPath: ctxProjectPath,
-        hint: '📖 IDE 客户端将从本地 .wdp-cache/context-memory/ 读取缓存文件并注入结果。如返回为空，说明该层尚无缓存数据。',
       };
     }
 
