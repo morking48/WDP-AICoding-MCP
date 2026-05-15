@@ -22,7 +22,7 @@
       "category": "生命周期检查",
       "severity": "error",
       "description": "确认初始化 → 渲染 → 清理的完整链路",
-      "requiredFlow": ["new WdpApi(config)", "Renderer.Start()", "Renderer.Stop()", "清理函数"],
+      "requiredFlow": ["new WdpApi(config)", "App.Renderer.Start()", "App.Renderer.Stop()", "清理函数"],
       "message": "缺少 初始化/渲染/清理 环节"
     },
     {

@@ -1,42 +1,46 @@
 {
-  "_warning": "⚠️ 本文档中的 API 名称（如 App.Scene.Creates、App.CameraControl.SetCameraPose 等）来自旧版摘录，可能与当前 Skill 文件中的实际 API 签名不一致。所有 API 调用必须以 Skill 文件正文为准，本文档仅供流程参考。",
+  "_warning": "⚠️ 本文档中的 API 名称已对齐远程 Skill Server (wdpapi-skill.51aes.com) 最新版本。所有 API 调用必须以 Skill 文件正文为准，本文档仅供流程参考。",
   "patterns": [
     {
       "id": "wdp-poi-window-interaction",
       "name": "WDP POI弹窗交互模式",
-      "description": "用于在 WDP 3D 场景中批量添加兴趣点（POI），并在用户点击 POI 时触发相机聚焦并弹出 3D Window 详情框。",
+      "description": "用于在 WDP 3D 场景中批量添加兴趣点（POI），并在用户点击 POI 时触发相机聚焦并弹出 Window 详情框。",
       "api_sequence": [
-        "App.Scene.Creates",
-        "App.Renderer.RegisterSceneEvent",
-        "App.CameraControl.SetCameraPose",
-        "new App.Window"
+        "new App.Poi({...})",
+        "App.Scene.Add(entity)",
+        "App.Renderer.RegisterSceneEvent('OnEntityClicked', func)",
+        "App.CameraControl.SetCameraPose({...})",
+        "new App.Window({...})",
+        "App.Scene.Add(entity)"
       ],
       "skill_sequence": [
         "reference/scene/covering/poi/SKILL.md",
-        "reference/renderer/SKILL.md"
+        "reference/renderer/SKILL.md",
+        "reference/camera/camera-control/SKILL.md",
+        "reference/scene/covering/window/SKILL.md"
       ],
       "data_flow": [
         {
-          "from": "App.Scene.Creates",
-          "to": "App.Renderer.RegisterSceneEvent",
-          "flow": "Creates 返回 result.objects（含 eid, customId, location）→ 缓存用于清理；事件回调通过 result.object.customId 匹配业务数据"
+          "from": "new App.Poi({...}) + App.Scene.Add(entity)",
+          "to": "App.Renderer.RegisterSceneEvent('OnEntityClicked', func)",
+          "flow": "Add 返回 result.object（含 eid, customId, location）→ 缓存用于清理；事件回调通过 result.object.customId 匹配业务数据"
         },
         {
           "from": "RegisterSceneEvent('OnEntityClicked') 回调",
-          "to": "App.CameraControl.SetCameraPose",
+          "to": "App.CameraControl.SetCameraPose({...})",
           "flow": "回调 result.object.location → SetCameraPose 的 target 参数（目标坐标）"
         },
         {
           "from": "RegisterSceneEvent('OnEntityClicked') 回调",
-          "to": "new App.Window",
+          "to": "new App.Window({...}) + App.Scene.Add(entity)",
           "flow": "回调 result.object.location → Window 的 location 参数；回调 result.object.customId → 用于查询业务数据填充 Window 内容"
         }
       ],
       "notes": [
-        "强烈建议使用 App.Scene.Creates 进行批量创建 POI，而非循环调用 Add，以提升渲染性能。",
-        "WDP 的点击事件必须通过 App.Renderer.RegisterSceneEvent('OnEntityClick', callback) 注册。",
-        "相机聚焦 SetCameraPose 时，建议给 target 坐标加上一定的 Z 轴偏移量（如 +50 米），俯仰角 pitch 设为负数（如 -20）。",
-        "生成 Window 后，必须确保将其返回的 Object 收集到业务层的 toolObjs 中，以便在 closeAll 时调用 .Clear() 销毁。"
+        "POI 创建使用 new App.Poi({...}) 构造 + App.Scene.Add(entity) 添加到场景，而非旧版 App.Scene.Creates。",
+        "WDP 的点击事件通过 App.Renderer.RegisterSceneEvent('OnEntityClicked', callback) 注册（注意事件名是 OnEntityClicked 非 OnEntityClick）。",
+        "相机聚焦使用 App.CameraControl.SetCameraPose({...})，建议给 target 坐标加上一定的 Z 轴偏移量（如 +50 米），俯仰角 pitch 设为负数（如 -20）。",
+        "Window 创建使用 new App.Window({...}) 构造 + App.Scene.Add(entity) 添加到场景。生成后必须确保将其返回的 Object 收集到业务层的 toolObjs 中，以便在 closeAll 时调用 .Delete() 销毁。"
       ]
     },
     {
@@ -44,32 +48,34 @@
       "name": "WDP 路径漫游与跟随模式",
       "description": "用于在 WDP 场景中绘制一条 3D 路径（如巡检路线），并让一个模型（或相机）沿着该路径动态移动。",
       "api_sequence": [
-        "new App.Path",
-        "App.Scene.Add",
-        "new App.Particle",
-        "App.Scene.Add",
-        "new App.Bound",
-        "bound.Update",
-        "bound.SetState"
+        "new App.Path({...})",
+        "App.Scene.Add(entity)",
+        "new App.Particle({...})",
+        "App.Scene.Add(entity)",
+        "new App.Bound({...})",
+        "App.Scene.Add(entity)",
+        "entity.Update({...})",
+        "entity.SetState('play')"
       ],
       "skill_sequence": [
         "reference/scene/covering/path/SKILL.md",
+        "reference/scene/covering/particle/SKILL.md",
         "reference/scene/covering/bound/SKILL.md"
       ],
       "data_flow": [
         {
           "from": "App.Scene.Add(Path)",
-          "to": "new App.Bound",
+          "to": "new App.Bound({...})",
           "flow": "Add 返回 result.object → pathObj，作为 Bound 构造函数的路径绑定对象"
         },
         {
           "from": "App.Scene.Add(Particle)",
-          "to": "new App.Bound",
+          "to": "new App.Bound({...})",
           "flow": "Add 返回 result.object → particleObj，作为 Bound 构造函数的移动实体绑定对象"
         },
         {
-          "from": "new App.Bound + App.Scene.Add",
-          "to": "bound.Update / bound.SetState",
+          "from": "new App.Bound({...}) + App.Scene.Add(entity)",
+          "to": "entity.Update({...}) / entity.SetState('play')",
           "flow": "Add 返回 result.object → boundObj，调用 boundObj.Update() 初始化，boundObj.SetState('play') 启动移动"
         },
         {
@@ -82,7 +88,7 @@
         "App.Path 的 coordinates 数组必须是 [lon, lat, height] 格式的三维数组。",
         "必须先将 Path 和 Particle 通过 App.Scene.Add 添加到场景中，然后才能创建 App.Bound 进行绑定。",
         "App.Bound 是控制实体沿路径移动的核心 API，它负责将 Particle 锚定在 Path 上。",
-        "调用 bound.Update 初始化后，使用 bound.SetState('play'|'pause'|'stop') 控制动画状态。",
+        "调用 entity.Update() 初始化后，使用 entity.SetState('play'|'pause'|'stop') 控制动画状态。",
         "若需相机第一人称跟随模型，需调用 App.CameraControl.UpdateCamera 将模式设为跟随。"
       ]
     },
@@ -91,20 +97,21 @@
       "name": "WDP 周界安防与告警模式",
       "description": "用于绘制电子围栏（Range），并结合特效（如发光墙、告警柱）实现周界入侵的视觉呈现。",
       "api_sequence": [
-        "new App.Range",
-        "App.Scene.Add",
-        "new App.Effect",
-        "App.Scene.Add",
-        "App.CameraControl.SetCameraPose"
+        "new App.Range({...})",
+        "App.Scene.Add(entity)",
+        "new App.Effect({...})",
+        "App.Scene.Add(entity)",
+        "App.CameraControl.SetCameraPose({...})"
       ],
       "skill_sequence": [
         "reference/scene/covering/range/SKILL.md",
+        "reference/scene/effects/SKILL.md",
         "reference/camera/camera-control/SKILL.md"
       ],
       "data_flow": [
         {
           "from": "App.Scene.Add(Range)",
-          "to": "App.CameraControl.SetCameraPose",
+          "to": "App.CameraControl.SetCameraPose({...})",
           "flow": "Add 返回 result.object（Range 实体，含 location）→ 使用 location 或 GetBoundingBox 的 result.center 作为 SetCameraPose 的 target"
         },
         {
