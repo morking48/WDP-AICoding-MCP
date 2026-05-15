@@ -220,29 +220,22 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
   let disambiguatedDomain: string | null = null;
   let primaryRoute: RouteConfig | undefined;
 
-  if (scene) {
-    // 场景命中：直接使用场景的 primary_skills，不再浪费 CPU 做关键词匹配
-    // 从 skill-route-mapping 中匹配 primary_skills[0] 对应的路由（获取 relatedSkills）
-    const firstSceneSkill = scene.primary_skills[0] || '';
-    primaryRoute = mapping.routes.find(r => r.skillPath === firstSceneSkill);
-  } else {
-    // 场景未命中 → 关键词加权兜底
-    keywordResults = matchKeywords(userRequirement);
-    disambiguatedDomain = applyDisambiguation(userRequirement, keywordResults);
+  // 始终执行关键词匹配（场景命中时作为补充，场景未命中时作为兜底）
+  keywordResults = matchKeywords(userRequirement);
+  disambiguatedDomain = applyDisambiguation(userRequirement, keywordResults);
 
-    if (disambiguatedDomain) {
-      primaryRoute = mapping.routes.find(r => r.domain === disambiguatedDomain);
-    }
-    if (!primaryRoute && keywordResults.length > 0) {
-      primaryRoute = mapping.routes.find(r => r.domain === keywordResults[0].domain);
-    }
+  if (disambiguatedDomain) {
+    primaryRoute = mapping.routes.find(r => r.domain === disambiguatedDomain);
+  }
+  if (!primaryRoute && keywordResults.length > 0) {
+    primaryRoute = mapping.routes.find(r => r.domain === keywordResults[0].domain);
   }
 
-  // 3. 收集所有匹配的 Skill 路径
+  // 3. 收集所有匹配的 Skill 路径（场景优先 + 关键词补充）
   const matchedSkills: string[] = [];
   const requiredRelatedSkills: string[] = [];
 
-  // 场景命中 → 场景的 primary_skills + secondary_skills 直接作为主 Skill 列表
+  // 场景命中 → 场景的 primary_skills + secondary_skills 作为主干
   if (scene) {
     for (const sp of scene.primary_skills) {
       if (!matchedSkills.includes(sp)) matchedSkills.push(sp);
@@ -252,7 +245,7 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
     }
   }
 
-  // 关键词路由的 Skill（场景未覆盖时补充）
+  // 关键词路由的 Skill（补充场景未覆盖的子能力）
   if (primaryRoute) {
     if (!matchedSkills.includes(primaryRoute.skillPath)) {
       matchedSkills.push(primaryRoute.skillPath);
