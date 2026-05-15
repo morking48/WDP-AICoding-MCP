@@ -41,19 +41,6 @@
     "reference/scene/covering/poi/SKILL.md",
     "reference/tools/picker/SKILL.md"
   ],
-  "pre_discovery": {
-    "required": true,
-    "strategy": "bim_hierarchy_traversal",
-    "when": "object_id_missing",
-    "target_skill": "wdp-api-scene-discovery",
-    "discovery_path": "C",
-    "steps": [
-      "若用户无法提供 buildingId / targetFloor / targetNodeId → 自动路由到 wdp-api-scene-discovery",
-      "使用路径 C（BIM层级遍历）：Hierarchy.GetChildren() 从建筑根节点展开",
-      "按名称/类型过滤匹配用户描述的楼层/房间构件",
-      "发现后写入 Cold.entities.snapshot + Hot.selection 再继续主流程"
-    ]
-  },
   "required_clarifications": [
     "buildingId 与 targetFloor 的来源（静态传参 / 用户点选 / 属性查询）",
     "targetNodeId 来源（屏幕拾取 / BIM 构件查询）",

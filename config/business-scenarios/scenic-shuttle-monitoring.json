@@ -1,7 +1,7 @@
 ﻿{
   "metadata": {
     "scenario_id": "scenic-shuttle-monitoring",
-    "version": "3.0.0"
+    "version": "3.1.0"
   },
   "id": "scenic-shuttle-monitoring",
   "name": "景区接驳车监控场景",
@@ -48,7 +48,7 @@
     {
       "name": "线路态势模块",
       "wdp_apis": [
-        "new App.Path()",
+        "new App.Path({...})",
         "App.Scene.Add",
         "App.Scene.Update"
       ],
@@ -57,8 +57,8 @@
     {
       "name": "车辆运行模块",
       "wdp_apis": [
-        "new App.Particle()",
-        "new App.Poi()",
+        "new App.Particle({...})",
+        "new App.Poi({...})",
         "App.Scene.Add",
         "App.Scene.Update"
       ],
@@ -67,7 +67,7 @@
     {
       "name": "轨迹回放模块",
       "wdp_apis": [
-        "new App.Bound()",
+        "new App.Bound({...})",
         "App.Scene.Add",
         "App.Scene.Update"
       ],
@@ -76,7 +76,7 @@
     {
       "name": "视频联动模块",
       "wdp_apis": [
-        "new App.Window()",
+        "new App.Window({...})",
         "App.Scene.Add",
         "App.Scene.Update"
       ],
@@ -85,10 +85,10 @@
     {
       "name": "镜头聚焦模块",
       "wdp_apis": [
-        "App.CameraControl.Focus",
-        "App.CameraControl.SetCameraPose"
+        "App.CameraControl.SetCameraPose",
+        "App.CameraControl.FlyTo"
       ],
-      "purpose": "车辆点击或异常时自动聚焦，失败降级 SetCameraPose"
+      "purpose": "车辆点击或异常时自动聚焦"
     },
     {
       "name": "事件联动模块",
@@ -104,66 +104,100 @@
     {
       "step": 1,
       "description": "等待场景就绪后执行业务链路",
-      "api": "App.Renderer.RegisterSceneEvent",
+      "api": "App.Renderer.RegisterSceneEvent('OnWdpSceneIsReady', func)",
       "params": {
-        "events": ["OnWdpSceneIsReady"]
+        "name": "OnWdpSceneIsReady",
+        "func": "async (res) => { if(res.result.progress === 100) { /* 执行后续业务 */ } }"
       }
     },
     {
       "step": 2,
       "description": "创建接驳线路对象",
-      "api": "App.Scene.Add",
+      "api": "new App.Path({...}) + App.Scene.Add(entity)",
       "params": {
-        "entity": "new App.Path()"
+        "entity": "new App.Path({...})",
+        "config": {
+          "polyline": {
+            "coordinates": "[[121.453, 31.112, 69], ...]"
+          },
+          "pathStyle": {
+            "type": "solid",
+            "lineColor": "#00aaff"
+          },
+          "customId": "shuttle_route_1"
+        }
       }
     },
     {
       "step": 3,
       "description": "创建班车车辆对象并更新运行状态",
-      "api": "App.Scene.Add",
+      "api": "new App.Particle({...}) + App.Scene.Add(entity)",
       "params": {
-        "entities": [
-          "new App.Particle()",
-          "new App.Poi()"
-        ]
+        "entity": "new App.Particle({...})",
+        "config": {
+          "location": "[121.453, 31.112, 69]",
+          "particleType": "vehicle_bus",
+          "customId": "shuttle_bus_1"
+        }
       }
     },
     {
       "step": 4,
       "description": "创建轨迹回放绑定对象",
-      "api": "App.Scene.Add",
+      "api": "new App.Bound({...}) + App.Scene.Add(entity)",
       "params": {
-        "entity": "new App.Bound()"
+        "entity": "new App.Bound({...})",
+        "config": {
+          "moving": "${busParticleObj}",
+          "path": "${routePathObj}",
+          "boundStyle": {
+            "time": 180,
+            "bLoop": true,
+            "speed": 1.0
+          },
+          "customId": "shuttle_bound_1"
+        }
       }
     },
     {
       "step": 5,
       "description": "注册点击联动事件",
-      "api": "App.Renderer.RegisterSceneEvent",
+      "api": "App.Renderer.RegisterSceneEvent('OnEntityClicked', func)",
       "params": {
-        "events": ["OnEntityClicked"]
+        "name": "OnEntityClicked",
+        "func": "async (ev) => { if(ev.result.object.customId.startsWith('shuttle')) { /* 聚焦车辆并显示视频窗口 */ } }"
       }
     },
     {
       "step": 6,
       "description": "点击车辆后创建视频窗口",
-      "api": "App.Scene.Add",
+      "api": "new App.Window({...}) + App.Scene.Add(entity)",
       "params": {
-        "entity": "new App.Window()"
+        "entity": "new App.Window({...})",
+        "config": {
+          "location": "${clickedLocation}",
+          "windowStyle": {
+            "url": "shuttle_video.html?busId=${busId}",
+            "size": [320, 240]
+          },
+          "customId": "shuttle_video_window"
+        }
       }
     },
     {
       "step": 7,
-      "description": "点击或异常时聚焦车辆，失败降级 SetCameraPose",
-      "api": "App.CameraControl.Focus",
+      "description": "点击或异常时聚焦车辆",
+      "api": "App.CameraControl.SetCameraPose",
       "params": {
-        "fallback": "App.CameraControl.SetCameraPose"
+        "target": "${clickedLocation}",
+        "pitch": -30,
+        "distance": 300
       }
     },
     {
       "step": 8,
       "description": "持续更新线路与车辆运行态势",
-      "api": "App.Scene.Update",
+      "api": "entity.Update({...})",
       "params": {
         "target": "path/particle/poi/window"
       }
@@ -171,12 +205,12 @@
   ],
   "data_flow": [
     {
-      "step": "App.Scene.Add(Path)",
+      "step": "new App.Path({...}) + App.Scene.Add(entity)",
       "output": "result.object（pathObj）",
       "usage": "作为 Bound 的路径绑定对象"
     },
     {
-      "step": "App.Scene.Add(Particle)",
+      "step": "new App.Particle({...}) + App.Scene.Add(entity)",
       "output": "result.object（particleObj）",
       "usage": "作为 Bound 的移动实体绑定对象"
     },
@@ -187,12 +221,12 @@
     }
   ],
   "cleanup_chain": [
-    {"create": "App.Scene.Add(Path)", "cleanup": "pathObj.Delete()"},
-    {"create": "App.Scene.Add(Particle)", "cleanup": "particleObj.Delete()"},
-    {"create": "App.Scene.Add(Poi)", "cleanup": "poiObj.Delete()"},
-    {"create": "App.Scene.Add(Bound)", "cleanup": "boundObj.Delete()"},
-    {"create": "App.Scene.Add(Window)", "cleanup": "windowObj.Delete()"},
-    {"create": "RegisterSceneEvent", "cleanup": "UnregisterSceneEvent"}
+    {"create": "new App.Path({...}) + App.Scene.Add(entity)", "cleanup": "pathObj.Delete()"},
+    {"create": "new App.Particle({...}) + App.Scene.Add(entity)", "cleanup": "particleObj.Delete()"},
+    {"create": "new App.Poi({...}) + App.Scene.Add(entity)", "cleanup": "poiObj.Delete()"},
+    {"create": "new App.Bound({...}) + App.Scene.Add(entity)", "cleanup": "boundObj.Delete()"},
+    {"create": "new App.Window({...}) + App.Scene.Add(entity)", "cleanup": "windowObj.Delete()"},
+    {"create": "RegisterSceneEvent", "cleanup": "UnRegisterSceneEvent"}
   ],
   "pattern": {
     "type": "scenic-shuttle-monitoring",

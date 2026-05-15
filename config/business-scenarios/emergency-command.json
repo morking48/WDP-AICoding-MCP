@@ -1,7 +1,7 @@
 ﻿{
     "metadata": {
         "scenario_id": "emergency-command",
-        "version": "3.0.0"
+        "version": "3.1.0"
     },
     "id": "emergency-command",
     "name": "应急指挥场景",
@@ -48,25 +48,24 @@
         {
             "name": "事件标注模块",
             "wdp_apis": [
-                "new App.Poi()",
+                "new App.Poi({...})",
                 "poiStyle.markerNormalUrl",
-                "poiStyle.text",
-                "poiStyle.textStyle"
+                "poiStyle.labelContent"
             ]
         },
         {
             "name": "资源粒子模块",
             "wdp_apis": [
-                "new App.Particle()",
+                "new App.Particle({...})",
                 "particleType",
-                "particleStyle.scale",
+                "particleStyle.scale3d",
                 "particleStyle.url"
             ]
         },
         {
             "name": "调度路径模块",
             "wdp_apis": [
-                "new App.Path()",
+                "new App.Path({...})",
                 "pathStyle.type",
                 "pathStyle.lineColor",
                 "pathStyle.lineWidth"
@@ -75,7 +74,7 @@
         {
             "name": "资源移动模块",
             "wdp_apis": [
-                "new App.Bound()",
+                "new App.Bound({...})",
                 "boundStyle.time",
                 "boundStyle.bLoop",
                 "boundStyle.speed"
@@ -84,7 +83,7 @@
         {
             "name": "态势范围模块",
             "wdp_apis": [
-                "new App.Range()",
+                "new App.Range({...})",
                 "rangeStyle.fillColor",
                 "rangeStyle.outlineColor",
                 "rangeStyle.height"
@@ -93,10 +92,9 @@
         {
             "name": "信息窗口模块",
             "wdp_apis": [
-                "new App.Window()",
+                "new App.Window({...})",
                 "windowStyle.url",
-                "windowStyle.size",
-                "windowStyle.followEntity"
+                "windowStyle.size"
             ]
         },
         {
@@ -104,95 +102,94 @@
             "wdp_apis": [
                 "App.Scene.Add",
                 "App.Scene.Update",
-                "App.Scene.Delete",
-                "App.Scene.Creates"
+                "App.Scene.Delete"
             ]
         },
         {
             "name": "相机控制模块",
             "wdp_apis": [
-                "App.CameraControl.FocusByLocation",
-                "App.CameraControl.FocusByCustomId",
-                "App.CameraControl.SetCameraPose"
+                "App.CameraControl.SetCameraPose",
+                "App.CameraControl.FlyTo"
             ]
         }
     ],
     "api_flow": [
         {
             "step": 1,
-            "description": "批量创建应急事件标注和影响范围",
-            "api": "App.Scene.Creates",
+            "description": "创建应急事件POI标注",
+            "api": "new App.Poi({...}) + App.Scene.Add(entity)",
             "params": {
-                "entities": [
-                    {
-                        "type": "Poi",
-                        "location": "[116.4074, 39.9042, 50]",
-                        "poiStyle": {
-                            "markerNormalUrl": "fire_emergency_icon.png",
-                            "text": "火灾事件"
-                        },
-                        "customId": "emergency_event_1"
+                "entity": "new App.Poi({...})",
+                "config": {
+                    "location": "[116.4074, 39.9042, 50]",
+                    "poiStyle": {
+                        "markerNormalUrl": "fire_emergency_icon.png",
+                        "labelContent": ["火灾事件", "#FFFFFFFF", 14]
                     },
-                    {
-                        "type": "Range",
-                        "polygon": {
-                            "coordinates": "[[116.407, 39.904], [116.408, 39.904], ...]"
-                        },
-                        "rangeStyle": {
-                            "fillColor": "rgba(255, 0, 0, 0.2)",
-                            "outlineColor": "#ff0000",
-                            "height": 100
-                        },
-                        "customId": "danger_zone_1"
-                    }
-                ]
+                    "customId": "emergency_event_1"
+                }
             }
         },
         {
             "step": 2,
-            "description": "创建应急资源粒子实体",
-            "api": "App.Scene.Creates",
+            "description": "创建危险范围区域",
+            "api": "new App.Range({...}) + App.Scene.Add(entity)",
             "params": {
-                "entities": [
-                    {
-                        "type": "Particle",
-                        "location": "[116.400, 39.900, 0]",
-                        "particleType": "vehicle_fire_truck",
-                        "particleStyle": {
-                            "scale": 1.2
-                        },
-                        "customId": "fire_truck_1"
-                    }
-                ]
+                "entity": "new App.Range({...})",
+                "config": {
+                    "polygon": {
+                        "coordinates": "[[116.407, 39.904], [116.408, 39.904], ...]"
+                    },
+                    "rangeStyle": {
+                        "fillColor": "rgba(255, 0, 0, 0.2)",
+                        "outlineColor": "#ff0000",
+                        "height": 100
+                    },
+                    "customId": "danger_zone_1"
+                }
             }
         },
         {
             "step": 3,
-            "description": "规划资源调度路径",
-            "api": "App.Scene.Creates",
+            "description": "创建应急资源粒子实体",
+            "api": "new App.Particle({...}) + App.Scene.Add(entity)",
             "params": {
-                "entities": [
-                    {
-                        "type": "Path",
-                        "polyline": {
-                            "coordinates": "[[116.400, 39.900, 0], [116.4074, 39.9042, 0]]"
-                        },
-                        "pathStyle": {
-                            "type": "arrow",
-                            "lineColor": "#ff6600",
-                            "lineWidth": 4
-                        },
-                        "customId": "dispatch_path_1"
-                    }
-                ]
+                "entity": "new App.Particle({...})",
+                "config": {
+                    "location": "[116.400, 39.900, 0]",
+                    "particleType": "vehicle_fire_truck",
+                    "particleStyle": {
+                        "scale3d": [1.2, 1.2, 1.2]
+                    },
+                    "customId": "fire_truck_1"
+                }
             }
         },
         {
             "step": 4,
-            "description": "绑定资源到调度路径",
-            "api": "App.Scene.Add",
+            "description": "规划资源调度路径",
+            "api": "new App.Path({...}) + App.Scene.Add(entity)",
             "params": {
-                "entity": "new App.Bound()",
+                "entity": "new App.Path({...})",
+                "config": {
+                    "polyline": {
+                        "coordinates": "[[116.400, 39.900, 0], [116.4074, 39.9042, 0]]"
+                    },
+                    "pathStyle": {
+                        "type": "arrow",
+                        "lineColor": "#ff6600",
+                        "lineWidth": 4
+                    },
+                    "customId": "dispatch_path_1"
+                }
+            }
+        },
+        {
+            "step": 5,
+            "description": "绑定资源到调度路径",
+            "api": "new App.Bound({...}) + App.Scene.Add(entity)",
+            "params": {
+                "entity": "new App.Bound({...})",
                 "config": {
                     "moving": "${fireTruckParticle}",
                     "path": "${dispatchPath}",
@@ -206,56 +203,52 @@
             }
         },
         {
-            "step": 5,
+            "step": 6,
             "description": "聚焦到应急事件位置",
-            "api": "App.CameraControl.FocusByLocation",
+            "api": "App.CameraControl.SetCameraPose",
             "params": {
-                "location": "[116.4074, 39.9042, 50]",
-                "duration": 1000,
+                "target": "[116.4074, 39.9042, 50]",
                 "pitch": -60,
-                "yaw": 0
+                "yaw": 0,
+                "distance": 500
             }
         },
         {
-            "step": 6,
+            "step": 7,
             "description": "创建态势信息窗口",
-            "api": "App.Scene.Add",
+            "api": "new App.Window({...}) + App.Scene.Add(entity)",
             "params": {
-                "entity": "new App.Window()",
+                "entity": "new App.Window({...})",
                 "config": {
                     "location": "[116.4074, 39.9042, 50]",
                     "windowStyle": {
                         "url": "emergency_dashboard.html?eventId=event_1",
-                        "size": "[400, 500]",
-                        "offset": "[0, 2]"
+                        "size": [400, 500],
+                        "offset": [0, 2]
                     },
                     "customId": "situation_window_1"
                 }
             }
         },
         {
-            "step": 7,
+            "step": 8,
             "description": "注册资源到达事件",
-            "api": "App.Renderer.RegisterSceneEvent",
+            "api": "App.Renderer.RegisterSceneEvent('OnMoveAlongPathEndEvent', func)",
             "params": {
-                "events": [
-                    {
-                        "name": "OnBoundMoveEnd",
-                        "func": "async (ev) => { if(ev.result.customId.startsWith('resource_bound')) { /* 资源到达，更新状态 */ } }"
-                    }
-                ]
+                "name": "OnMoveAlongPathEndEvent",
+                "func": "async (ev) => { if(ev.result.customId.startsWith('resource_bound')) { /* 资源到达，更新状态 */ } }"
             }
         },
         {
-            "step": 8,
+            "step": 9,
             "description": "更新事件状态标注",
-            "api": "App.Scene.Update",
+            "api": "entity.Update({...})",
             "params": {
-                "customId": "emergency_event_1",
+                "entity": "poiObj",
                 "updateData": {
                     "poiStyle": {
                         "markerNormalUrl": "fire_controlled_icon.png",
-                        "text": "火灾事件 (处置中)"
+                        "labelContent": ["火灾事件 (处置中)", "#FFFFFFFF", 14]
                     }
                 }
             }
@@ -263,36 +256,44 @@
     ],
     "data_flow": [
         {
-            "step": "App.Scene.Creates",
-            "output": "result.objects（含 eid, customId, location）",
+            "step": "new App.Poi({...}) / new App.Range({...}) + App.Scene.Add(entity)",
+            "output": "result.object（含 eid, customId, location）",
             "usage": "缓存用于清理和后续更新"
         },
         {
-            "step": "OnBoundMoveEnd 回调",
+            "step": "OnMoveAlongPathEndEvent 回调",
             "output": "result.customId",
             "usage": "用于判断资源到达，触发状态更新"
         }
     ],
     "cleanup_chain": [
         {
-            "create": "App.Scene.Creates(POI/Range)",
-            "cleanup": "Delete(customId)"
+            "create": "new App.Poi({...}) + App.Scene.Add(entity)",
+            "cleanup": "poiObj.Delete()"
         },
         {
-            "create": "App.Scene.Creates(Particle)",
+            "create": "new App.Range({...}) + App.Scene.Add(entity)",
+            "cleanup": "rangeObj.Delete()"
+        },
+        {
+            "create": "new App.Particle({...}) + App.Scene.Add(entity)",
             "cleanup": "particleObj.Delete()"
         },
         {
-            "create": "App.Scene.Add(Bound)",
+            "create": "new App.Path({...}) + App.Scene.Add(entity)",
+            "cleanup": "pathObj.Delete()"
+        },
+        {
+            "create": "new App.Bound({...}) + App.Scene.Add(entity)",
             "cleanup": "boundObj.Delete()"
         },
         {
-            "create": "App.Scene.Add(Window)",
+            "create": "new App.Window({...}) + App.Scene.Add(entity)",
             "cleanup": "windowObj.Delete()"
         },
         {
             "create": "RegisterSceneEvent",
-            "cleanup": "UnregisterSceneEvent"
+            "cleanup": "UnRegisterSceneEvent"
         }
     ],
     "pattern": {

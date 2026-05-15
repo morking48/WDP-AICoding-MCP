@@ -1,7 +1,7 @@
 ﻿{
     "metadata": {
         "scenario_id": "video-perimeter-monitoring",
-        "version": "3.0.0"
+        "version": "3.1.0"
     },
     "id": "video-perimeter-monitoring",
     "name": "视频周界场景",
@@ -54,23 +54,22 @@
             "wdp_apis": [
                 "App.Scene.Add",
                 "App.Scene.Update",
-                "App.Scene.Delete",
-                "App.Scene.Creates"
+                "App.Scene.Delete"
             ]
         },
         {
             "name": "POI标注模块",
             "wdp_apis": [
-                "new App.Poi()",
+                "new App.Poi({...})",
                 "poiStyle.markerNormalUrl",
-                "poiStyle.markerSelectUrl",
-                "poiStyle.text"
+                "poiStyle.markerActivateUrl",
+                "poiStyle.labelContent"
             ]
         },
         {
             "name": "周界围栏模块",
             "wdp_apis": [
-                "new App.Range()",
+                "new App.Range({...})",
                 "rangeStyle.fillColor",
                 "rangeStyle.outlineColor",
                 "rangeStyle.height"
@@ -79,7 +78,7 @@
         {
             "name": "视频窗口模块",
             "wdp_apis": [
-                "new App.Window()",
+                "new App.Window({...})",
                 "windowStyle.url",
                 "windowStyle.size",
                 "windowStyle.offset"
@@ -89,6 +88,7 @@
             "name": "事件交互模块",
             "wdp_apis": [
                 "App.Renderer.RegisterSceneEvent",
+                "App.Renderer.RegisterSceneEvents",
                 "OnWdpSceneIsReady",
                 "OnEntityClicked",
                 "OnMouseEnterEntity"
@@ -97,43 +97,34 @@
         {
             "name": "相机控制模块",
             "wdp_apis": [
-                "App.CameraControl.FocusByCustomId",
-                "App.CameraControl.FocusByLocation",
-                "App.CameraControl.SetCameraPose"
+                "App.CameraControl.SetCameraPose",
+                "App.CameraControl.FlyTo"
             ]
         }
     ],
     "api_flow": [
         {
             "step": 1,
-            "description": "批量创建AI摄像头POI标注",
-            "api": "App.Scene.Creates",
+            "description": "逐个创建AI摄像头POI标注",
+            "api": "new App.Poi({...}) + App.Scene.Add(entity)",
             "params": {
-                "entities": [
-                    {
-                        "type": "Poi",
-                        "location": "[121.464, 31.224, 47]",
-                        "poiStyle": {
-                            "markerNormalUrl": "camera_icon.png",
-                            "text": "AI摄像头1"
-                        },
-                        "customId": "camera_poi_1"
-                    }
-                ],
-                "options": {
-                    "calculateCoordZ": {
-                        "coordZRef": "surface",
-                        "coordZOffset": 2
-                    }
+                "entity": "new App.Poi({...})",
+                "config": {
+                    "location": "[121.464, 31.224, 47]",
+                    "poiStyle": {
+                        "markerNormalUrl": "camera_icon.png",
+                        "labelContent": ["AI摄像头1", "#FFFFFFFF", 14]
+                    },
+                    "customId": "camera_poi_1"
                 }
             }
         },
         {
             "step": 2,
             "description": "创建周界围栏区域",
-            "api": "App.Scene.Add",
+            "api": "new App.Range({...}) + App.Scene.Add(entity)",
             "params": {
-                "entity": "new App.Range()",
+                "entity": "new App.Range({...})",
                 "config": {
                     "polygon": {
                         "coordinates": "[[121.464, 31.224], [121.465, 31.224], ...]"
@@ -150,39 +141,35 @@
         {
             "step": 3,
             "description": "注册POI点击事件",
-            "api": "App.Renderer.RegisterSceneEvent",
+            "api": "App.Renderer.RegisterSceneEvent('OnEntityClicked', func)",
             "params": {
-                "events": [
-                    {
-                        "name": "OnEntityClicked",
-                        "func": "async (ev) => { if(ev.result.customId.startsWith('camera_poi')) { /* 聚焦相机并显示视频窗口 */ } }"
-                    }
-                ]
+                "name": "OnEntityClicked",
+                "func": "async (ev) => { if(ev.result.customId.startsWith('camera_poi')) { /* 聚焦相机并显示视频窗口 */ } }"
             }
         },
         {
             "step": 4,
             "description": "聚焦到选中的摄像头",
-            "api": "App.CameraControl.FocusByCustomId",
+            "api": "App.CameraControl.SetCameraPose",
             "params": {
-                "customId": "${clickedPoiId}",
-                "duration": 500,
+                "target": "${clickedPoiLocation}",
                 "pitch": -69,
-                "yaw": 176
+                "yaw": 176,
+                "distance": 200
             }
         },
         {
             "step": 5,
             "description": "创建视频流窗口",
-            "api": "App.Scene.Add",
+            "api": "new App.Window({...}) + App.Scene.Add(entity)",
             "params": {
-                "entity": "new App.Window()",
+                "entity": "new App.Window({...})",
                 "config": {
                     "location": "${cameraLocation}",
                     "windowStyle": {
                         "url": "video_stream.html?cameraId=${cameraId}",
-                        "size": "[250, 190]",
-                        "offset": "[0, 1.7]"
+                        "size": [250, 190],
+                        "offset": [0, 1.7]
                     },
                     "customId": "video_window_${cameraId}"
                 }
@@ -191,32 +178,32 @@
     ],
     "data_flow": [
         {
-            "step": "App.Scene.Creates",
-            "output": "result.objects（含 eid, customId, location）",
+            "step": "new App.Poi({...}) + App.Scene.Add(entity)",
+            "output": "result.object（含 eid, customId, location）",
             "usage": "缓存用于清理；事件回调通过 customId 匹配业务数据"
         },
         {
             "step": "RegisterSceneEvent('OnEntityClicked') 回调",
             "output": "result.object.customId, result.object.location",
-            "usage": "customId 用于 FocusByCustomId 和 Window 定位；location 用于 Window 位置"
+            "usage": "customId 用于 SetCameraPose 和 Window 定位；location 用于 Window 位置"
         }
     ],
     "cleanup_chain": [
         {
-            "create": "App.Scene.Creates(POI)",
-            "cleanup": "App.Scene.Delete(customId)"
+            "create": "new App.Poi({...}) + App.Scene.Add(entity)",
+            "cleanup": "poiObj.Delete()"
         },
         {
-            "create": "App.Scene.Add(Range)",
+            "create": "new App.Range({...}) + App.Scene.Add(entity)",
             "cleanup": "rangeObj.Delete()"
         },
         {
-            "create": "App.Scene.Add(Window)",
+            "create": "new App.Window({...}) + App.Scene.Add(entity)",
             "cleanup": "windowObj.Delete()"
         },
         {
             "create": "RegisterSceneEvent",
-            "cleanup": "App.Renderer.UnregisterSceneEvent"
+            "cleanup": "App.Renderer.UnRegisterSceneEvent"
         }
     ],
     "pattern": {

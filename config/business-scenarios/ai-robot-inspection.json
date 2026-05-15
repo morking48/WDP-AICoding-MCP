@@ -1,7 +1,7 @@
 ﻿{
   "metadata": {
     "scenario_id": "ai-robot-inspection",
-    "version": "3.0.0"
+    "version": "3.1.0"
   },
   "id": "ai-robot-inspection",
   "name": "AI 机器人巡检场景",
@@ -38,20 +38,6 @@
     "reference/camera/camera-control/SKILL.md",
     "reference/renderer/SKILL.md"
   ],
-  "pre_discovery": {
-    "required": true,
-    "strategy": "type_query_or_picker",
-    "when": "object_id_missing",
-    "target_skill": "wdp-api-scene-discovery",
-    "discovery_path": "A_or_B",
-    "steps": [
-      "若用户无法提供巡检实体 ID / 路径对象 → 自动路由到 wdp-api-scene-discovery",
-      "优先路径 A（屏幕拾取）：生成页面让用户点击巡检实体 → 拿到 entityId",
-      "备选路径 B（实体扫描）：GetByType 或 GetAll 列出可移动实体供选择",
-      "路径坐标若缺失 → 路径 E（PickerPoint 取点）",
-      "发现后写入 Cold.entities.snapshot + Hot.selection 再继续主流程"
-    ]
-  },
   "required_clarifications": [
     "路径是新建还是已有",
     "巡检实体的对象类别和对象 Id 来源",
@@ -62,7 +48,7 @@
     {
       "name": "路径实体模块",
       "wdp_apis": [
-        "new App.Path()",
+        "new App.Path({...})",
         "pathStyle.type",
         "pathStyle.lineColor",
         "pathStyle.lineWidth"
@@ -71,16 +57,16 @@
     {
       "name": "粒子实体模块",
       "wdp_apis": [
-        "new App.Particle()",
+        "new App.Particle({...})",
         "particleType",
-        "particleStyle.scale",
+        "particleStyle.scale3d",
         "particleStyle.rotation"
       ]
     },
     {
       "name": "路径绑定模块",
       "wdp_apis": [
-        "new App.Bound()",
+        "new App.Bound({...})",
         "boundStyle.time",
         "boundStyle.bLoop",
         "boundStyle.speed"
@@ -89,19 +75,17 @@
     {
       "name": "检查点标注模块",
       "wdp_apis": [
-        "new App.Poi()",
+        "new App.Poi({...})",
         "poiStyle.markerNormalUrl",
-        "poiStyle.text",
-        "poiStyle.textStyle"
+        "poiStyle.labelContent"
       ]
     },
     {
       "name": "数据窗口模块",
       "wdp_apis": [
-        "new App.Window()",
+        "new App.Window({...})",
         "windowStyle.url",
-        "windowStyle.size",
-        "windowStyle.followEntity"
+        "windowStyle.size"
       ]
     },
     {
@@ -109,64 +93,68 @@
       "wdp_apis": [
         "App.Scene.Add",
         "App.Scene.Update",
-        "App.Scene.Delete",
-        "App.Scene.Creates"
+        "App.Scene.Delete"
       ]
     }
   ],
   "api_flow": [
     {
       "step": 1,
-      "description": "批量创建巡检路径和检查点",
-      "api": "App.Scene.Creates",
+      "description": "创建巡检路径",
+      "api": "new App.Path({...}) + App.Scene.Add(entity)",
       "params": {
-        "entities": [
-          {
-            "type": "Path",
-            "polyline": {
-              "coordinates": "[[121.453, 31.112, 69], [121.477, 31.092, 85], ...]"
-            },
-            "pathStyle": {
-              "type": "arrow",
-              "lineColor": "#00ff00",
-              "lineWidth": 3
-            },
-            "customId": "inspection_path_1"
+        "entity": "new App.Path({...})",
+        "config": {
+          "polyline": {
+            "coordinates": "[[121.453, 31.112, 69], [121.477, 31.092, 85], ...]"
           },
-          {
-            "type": "Poi",
-            "location": "[121.453, 31.112, 69]",
-            "poiStyle": {
-              "markerNormalUrl": "checkpoint_icon.png",
-              "text": "检查点A"
-            },
-            "customId": "checkpoint_A"
-          }
-        ]
+          "pathStyle": {
+            "type": "arrow",
+            "lineColor": "#00ff00",
+            "lineWidth": 3
+          },
+          "customId": "inspection_path_1"
+        }
       }
     },
     {
       "step": 2,
-      "description": "创建机器人粒子实体",
-      "api": "App.Scene.Add",
+      "description": "创建检查点POI标注",
+      "api": "new App.Poi({...}) + App.Scene.Add(entity)",
       "params": {
-        "entity": "new App.Particle()",
+        "entity": "new App.Poi({...})",
+        "config": {
+          "location": "[121.453, 31.112, 69]",
+          "poiStyle": {
+            "markerNormalUrl": "checkpoint_icon.png",
+            "labelContent": ["检查点A", "#FFFFFFFF", 14]
+          },
+          "customId": "checkpoint_A"
+        }
+      }
+    },
+    {
+      "step": 3,
+      "description": "创建机器人粒子实体",
+      "api": "new App.Particle({...}) + App.Scene.Add(entity)",
+      "params": {
+        "entity": "new App.Particle({...})",
         "config": {
           "location": "[121.453, 31.112, 69]",
           "particleType": "vehicle_taxi",
           "particleStyle": {
-            "scale": 1.5
+            "scale3d": [1.5, 1.5, 1.5]
           },
           "customId": "robot_particle_1"
         }
       }
     },
     {
-      "step": 3,
+      "step": 4,
       "description": "绑定机器人到巡检路径",
-      "api": "App.Scene.Add",
+      "api": "new App.Bound({...}) + App.Scene.Add(entity)",
       "params": {
-        "entity": "new App.Bound()",
+        "entity": "new App.Bound({...})",
         "config": {
           "moving": "${robotParticle}",
           "path": "${inspectionPath}",
@@ -180,45 +168,40 @@
       }
     },
     {
-      "step": 4,
-      "description": "注册路径移动事件监听",
-      "api": "App.Renderer.RegisterSceneEvent",
+      "step": 5,
+      "description": "注册路径移动结束事件监听",
+      "api": "App.Renderer.RegisterSceneEvent('OnMoveAlongPathEndEvent', func)",
       "params": {
-        "events": [
-          {
-            "name": "OnBoundMoveEnd",
-            "func": "async (ev) => { if(ev.result.customId === 'robot_bound_1') { /* 到达终点，触发数据采集 */ } }"
-          }
-        ]
+        "name": "OnMoveAlongPathEndEvent",
+        "func": "async (ev) => { if(ev.result.customId === 'robot_bound_1') { /* 到达终点，触发数据采集 */ } }"
       }
     },
     {
-      "step": 5,
+      "step": 6,
       "description": "在检查点创建数据采集窗口",
-      "api": "App.Scene.Add",
+      "api": "new App.Window({...}) + App.Scene.Add(entity)",
       "params": {
-        "entity": "new App.Window()",
+        "entity": "new App.Window({...})",
         "config": {
           "location": "${checkpointLocation}",
           "windowStyle": {
             "url": "inspection_data.html?pointId=${pointId}",
-            "size": "[300, 400]",
-            "followEntity": true
+            "size": [300, 400]
           },
           "customId": "data_window_${pointId}"
         }
       }
     },
     {
-      "step": 6,
+      "step": 7,
       "description": "更新检查点POI状态",
-      "api": "App.Scene.Update",
+      "api": "entity.Update({...})",
       "params": {
-        "customId": "checkpoint_A",
+        "entity": "poiObj",
         "updateData": {
           "poiStyle": {
             "markerNormalUrl": "checkpoint_completed_icon.png",
-            "text": "检查点A (已完成)"
+            "labelContent": ["检查点A (已完成)", "#FFFFFFFF", 14]
           }
         }
       }
@@ -226,27 +209,28 @@
   ],
   "data_flow": [
     {
-      "step": "App.Scene.Add(Path)",
+      "step": "new App.Path({...}) + App.Scene.Add(entity)",
       "output": "result.object（pathObj）",
       "usage": "作为 Bound 构造函数的路径绑定对象"
     },
     {
-      "step": "App.Scene.Add(Particle)",
+      "step": "new App.Particle({...}) + App.Scene.Add(entity)",
       "output": "result.object（particleObj）",
       "usage": "作为 Bound 构造函数的移动实体绑定对象"
     },
     {
-      "step": "OnBoundMoveEnd 回调",
+      "step": "OnMoveAlongPathEndEvent 回调",
       "output": "result.customId, result.passedPointIndex",
       "usage": "用于判断到达终点，触发数据采集和状态更新"
     }
   ],
   "cleanup_chain": [
-    {"create": "App.Scene.Creates(Path)", "cleanup": "pathObj.Delete()"},
-    {"create": "App.Scene.Add(Particle)", "cleanup": "particleObj.Delete()"},
-    {"create": "App.Scene.Add(Bound)", "cleanup": "boundObj.Delete()"},
-    {"create": "App.Scene.Add(Window)", "cleanup": "windowObj.Delete()"},
-    {"create": "RegisterSceneEvent", "cleanup": "UnregisterSceneEvent"}
+    {"create": "new App.Path({...}) + App.Scene.Add(entity)", "cleanup": "pathObj.Delete()"},
+    {"create": "new App.Poi({...}) + App.Scene.Add(entity)", "cleanup": "poiObj.Delete()"},
+    {"create": "new App.Particle({...}) + App.Scene.Add(entity)", "cleanup": "particleObj.Delete()"},
+    {"create": "new App.Bound({...}) + App.Scene.Add(entity)", "cleanup": "boundObj.Delete()"},
+    {"create": "new App.Window({...}) + App.Scene.Add(entity)", "cleanup": "windowObj.Delete()"},
+    {"create": "RegisterSceneEvent", "cleanup": "UnRegisterSceneEvent"}
   ],
   "pattern": {
     "type": "workflow-orchestration",

@@ -1,7 +1,7 @@
 ﻿{
   "metadata": {
     "scenario_id": "grid-management-inspection",
-    "version": "3.0.0"
+    "version": "3.1.0"
   },
   "id": "grid-management-inspection",
   "name": "网格化管理巡检场景",
@@ -47,7 +47,7 @@
     {
       "name": "网格区域模块",
       "wdp_apis": [
-        "new App.Range()",
+        "new App.Range({...})",
         "App.Scene.Add",
         "App.Scene.Update"
       ],
@@ -56,7 +56,7 @@
     {
       "name": "网格边界路径模块",
       "wdp_apis": [
-        "new App.Path()",
+        "new App.Path({...})",
         "App.Scene.Add",
         "App.Scene.Update"
       ],
@@ -65,7 +65,7 @@
     {
       "name": "巡检对象模块",
       "wdp_apis": [
-        "new App.Particle()",
+        "new App.Particle({...})",
         "App.Scene.Add",
         "App.Scene.Update"
       ],
@@ -74,7 +74,7 @@
     {
       "name": "路径绑定与移动模块",
       "wdp_apis": [
-        "new App.Bound()",
+        "new App.Bound({...})",
         "App.Scene.Add",
         "App.Scene.Update"
       ],
@@ -83,7 +83,7 @@
     {
       "name": "数据采集窗口模块",
       "wdp_apis": [
-        "new App.Window()",
+        "new App.Window({...})",
         "App.Scene.Add",
         "App.Scene.Update"
       ],
@@ -93,7 +93,7 @@
       "name": "相机跟随模块",
       "wdp_apis": [
         "App.CameraControl.UpdateCamera",
-        "App.CameraControl.FocusByLocation"
+        "App.CameraControl.SetCameraPose"
       ],
       "purpose": "相机跟随巡检对象（可选）"
     },
@@ -102,7 +102,7 @@
       "wdp_apis": [
         "App.Renderer.RegisterSceneEvent",
         "OnWdpSceneIsReady",
-        "OnBoundMoveEnd"
+        "OnMoveAlongPathEndEvent"
       ],
       "purpose": "场景就绪门禁与巡检点到达事件处理"
     }
@@ -111,9 +111,9 @@
     {
       "step": 1,
       "description": "确认网格区域类型并创建",
-      "api": "App.Scene.Add / GIS操作",
+      "api": "new App.Range({...}) + App.Scene.Add(entity) 或 GIS GeoLayer",
       "params": {
-        "entity": "new App.Range() 或 GIS GeoLayer",
+        "entity": "new App.Range({...})",
         "config": {
           "polygon": {
             "coordinates": "[[121.464, 31.224], ...]"
@@ -130,9 +130,9 @@
     {
       "step": 2,
       "description": "创建网格边界路径",
-      "api": "App.Scene.Add",
+      "api": "new App.Path({...}) + App.Scene.Add(entity)",
       "params": {
-        "entity": "new App.Path()",
+        "entity": "new App.Path({...})",
         "config": {
           "polyline": {
             "coordinates": "[[121.464, 31.224, 30], [121.465, 31.224, 30], ...]"
@@ -149,14 +149,14 @@
     {
       "step": 3,
       "description": "创建无人机/巡检车粒子实体",
-      "api": "App.Scene.Add",
+      "api": "new App.Particle({...}) + App.Scene.Add(entity)",
       "params": {
-        "entity": "new App.Particle()",
+        "entity": "new App.Particle({...})",
         "config": {
           "location": "[121.464, 31.224, 30]",
           "particleType": "vehicle_drone",
           "particleStyle": {
-            "scale": 1.0
+            "scale3d": [1.0, 1.0, 1.0]
           },
           "customId": "inspection_drone_1"
         }
@@ -165,9 +165,9 @@
     {
       "step": 4,
       "description": "绑定巡检对象到网格路径",
-      "api": "App.Scene.Add",
+      "api": "new App.Bound({...}) + App.Scene.Add(entity)",
       "params": {
-        "entity": "new App.Bound()",
+        "entity": "new App.Bound({...})",
         "config": {
           "moving": "${droneParticle}",
           "path": "${gridPath}",
@@ -183,28 +183,23 @@
     {
       "step": 5,
       "description": "注册巡检点到达事件",
-      "api": "App.Renderer.RegisterSceneEvent",
+      "api": "App.Renderer.RegisterSceneEvent('OnMoveAlongPathEndEvent', func)",
       "params": {
-        "events": [
-          {
-            "name": "OnBoundMoveEnd",
-            "func": "async (ev) => { /* 到达巡检点，触发数据采集 */ }"
-          }
-        ]
+        "name": "OnMoveAlongPathEndEvent",
+        "func": "async (ev) => { /* 到达巡检点，触发数据采集 */ }"
       }
     },
     {
       "step": 6,
       "description": "创建巡检数据窗口",
-      "api": "App.Scene.Add",
+      "api": "new App.Window({...}) + App.Scene.Add(entity)",
       "params": {
-        "entity": "new App.Window()",
+        "entity": "new App.Window({...})",
         "config": {
           "location": "${checkpointLocation}",
           "windowStyle": {
             "url": "inspection_data.html?gridId=grid_1",
-            "size": "[350, 450]",
-            "followEntity": true
+            "size": [350, 450]
           },
           "customId": "grid_window_1"
         }
@@ -227,23 +222,23 @@
       "usage": "用于生成网格边界路径"
     },
     {
-      "step": "App.Scene.Add(Path)",
+      "step": "new App.Path({...}) + App.Scene.Add(entity)",
       "output": "result.object（pathObj）",
       "usage": "作为 Bound 的路径绑定对象"
     },
     {
-      "step": "OnBoundMoveEnd 回调",
+      "step": "OnMoveAlongPathEndEvent 回调",
       "output": "result.passedPointIndex",
       "usage": "用于判断到达巡检点，触发数据采集"
     }
   ],
   "cleanup_chain": [
-    {"create": "Range/GIS区域", "cleanup": "Delete(customId)"},
-    {"create": "App.Scene.Add(Path)", "cleanup": "pathObj.Delete()"},
-    {"create": "App.Scene.Add(Particle)", "cleanup": "particleObj.Delete()"},
-    {"create": "App.Scene.Add(Bound)", "cleanup": "boundObj.Delete()"},
-    {"create": "App.Scene.Add(Window)", "cleanup": "windowObj.Delete()"},
-    {"create": "RegisterSceneEvent", "cleanup": "UnregisterSceneEvent"},
+    {"create": "Range/GIS区域", "cleanup": "rangeObj.Delete()"},
+    {"create": "new App.Path({...}) + App.Scene.Add(entity)", "cleanup": "pathObj.Delete()"},
+    {"create": "new App.Particle({...}) + App.Scene.Add(entity)", "cleanup": "particleObj.Delete()"},
+    {"create": "new App.Bound({...}) + App.Scene.Add(entity)", "cleanup": "boundObj.Delete()"},
+    {"create": "new App.Window({...}) + App.Scene.Add(entity)", "cleanup": "windowObj.Delete()"},
+    {"create": "RegisterSceneEvent", "cleanup": "UnRegisterSceneEvent"},
     {"create": "Camera跟随", "cleanup": "ResetCameraMode"}
   ],
   "pattern": {

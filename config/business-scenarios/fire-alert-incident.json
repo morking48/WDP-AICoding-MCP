@@ -1,7 +1,7 @@
 ﻿{
   "metadata": {
     "scenario_id": "fire-alert-incident",
-    "version": "3.0.0"
+    "version": "3.1.0"
   },
   "id": "fire-alert-incident",
   "name": "火情告警场景",
@@ -47,7 +47,7 @@
     {
       "name": "火情特效模块",
       "wdp_apis": [
-        "new App.Particle()",
+        "new App.Particle({...})",
         "App.Scene.Add",
         "App.Scene.Update"
       ],
@@ -56,7 +56,7 @@
     {
       "name": "告警POI模块",
       "wdp_apis": [
-        "new App.Poi()",
+        "new App.Poi({...})",
         "App.Scene.Add",
         "App.Scene.Update"
       ],
@@ -65,7 +65,7 @@
     {
       "name": "3D文字标注模块",
       "wdp_apis": [
-        "new App.Text3D()",
+        "new App.Text3D({...})",
         "App.Scene.Add",
         "App.Scene.Update"
       ],
@@ -74,7 +74,7 @@
     {
       "name": "视频监控窗口模块",
       "wdp_apis": [
-        "new App.Window()",
+        "new App.Window({...})",
         "App.Scene.Add",
         "App.Scene.Update"
       ],
@@ -83,10 +83,10 @@
     {
       "name": "镜头聚焦模块",
       "wdp_apis": [
-        "App.CameraControl.Focus",
-        "App.CameraControl.SetCameraPose"
+        "App.CameraControl.SetCameraPose",
+        "App.CameraControl.FlyTo"
       ],
-      "purpose": "对火情点位进行相机聚焦与失败降级"
+      "purpose": "对火情点位进行相机聚焦"
     },
     {
       "name": "事件联动模块",
@@ -102,63 +102,99 @@
     {
       "step": 1,
       "description": "等待场景就绪后再执行业务链路",
-      "api": "App.Renderer.RegisterSceneEvent",
+      "api": "App.Renderer.RegisterSceneEvent('OnWdpSceneIsReady', func)",
       "params": {
-        "events": ["OnWdpSceneIsReady"]
+        "name": "OnWdpSceneIsReady",
+        "func": "async (res) => { if(res.result.progress === 100) { /* 执行后续业务 */ } }"
       }
     },
     {
       "step": 2,
-      "description": "创建火情特效与告警点位",
-      "api": "App.Scene.Add",
+      "description": "创建火情特效",
+      "api": "new App.Particle({...}) + App.Scene.Add(entity)",
       "params": {
-        "entities": [
-          "new App.Particle()",
-          "new App.Poi()"
-        ],
-        "particleStyle": {
-          "particleType": "flame"
+        "entity": "new App.Particle({...})",
+        "config": {
+          "location": "${fireLocation}",
+          "particleType": "flame",
+          "customId": "fire_particle_1"
         }
       }
     },
     {
       "step": 3,
-      "description": "创建3D文字展示火情等级与状态",
-      "api": "App.Scene.Add",
+      "description": "创建火情告警POI",
+      "api": "new App.Poi({...}) + App.Scene.Add(entity)",
       "params": {
-        "entity": "new App.Text3D()"
+        "entity": "new App.Poi({...})",
+        "config": {
+          "location": "${fireLocation}",
+          "poiStyle": {
+            "markerNormalUrl": "fire_alert_icon.png",
+            "labelContent": ["火情告警", "#FF0000FF", 16]
+          },
+          "customId": "fire_alert_poi_1"
+        }
       }
     },
     {
       "step": 4,
-      "description": "注册告警对象点击联动事件",
-      "api": "App.Renderer.RegisterSceneEvent",
+      "description": "创建3D文字展示火情等级与状态",
+      "api": "new App.Text3D({...}) + App.Scene.Add(entity)",
       "params": {
-        "events": ["OnEntityClicked"]
+        "entity": "new App.Text3D({...})",
+        "config": {
+          "location": "${fireLocation}",
+          "customId": "fire_text3d_1"
+        }
       }
     },
     {
       "step": 5,
-      "description": "点击后创建视频窗口",
-      "api": "App.Scene.Add",
+      "description": "注册告警对象点击联动事件",
+      "api": "App.Renderer.RegisterSceneEvent('OnEntityClicked', func)",
       "params": {
-        "entity": "new App.Window()"
+        "name": "OnEntityClicked",
+        "func": "async (ev) => { if(ev.result.object.customId.startsWith('fire_alert')) { /* 聚焦相机并显示视频窗口 */ } }"
       }
     },
     {
       "step": 6,
-      "description": "点击后相机聚焦到火情点位",
-      "api": "App.CameraControl.Focus",
+      "description": "点击后创建视频窗口",
+      "api": "new App.Window({...}) + App.Scene.Add(entity)",
       "params": {
-        "fallback": "App.CameraControl.SetCameraPose"
+        "entity": "new App.Window({...})",
+        "config": {
+          "location": "${clickedLocation}",
+          "windowStyle": {
+            "url": "fire_video.html?cameraId=${cameraId}",
+            "size": [320, 240]
+          },
+          "customId": "fire_video_window"
+        }
       }
     },
     {
       "step": 7,
-      "description": "更新火情状态与可视化标识",
-      "api": "App.Scene.Update",
+      "description": "点击后相机聚焦到火情点位",
+      "api": "App.CameraControl.SetCameraPose",
       "params": {
-        "target": "particle/poi/text3d/window"
+        "target": "${clickedLocation}",
+        "pitch": -30,
+        "distance": 300
+      }
+    },
+    {
+      "step": 8,
+      "description": "更新火情状态与可视化标识",
+      "api": "entity.Update({...})",
+      "params": {
+        "target": "particle/poi/text3d/window",
+        "updateData": {
+          "poiStyle": {
+            "labelContent": ["火情处置中", "#FFAA00FF", 14]
+          }
+        }
       }
     }
   ],
@@ -175,11 +211,11 @@
     }
   ],
   "cleanup_chain": [
-    {"create": "App.Scene.Add(Particle)", "cleanup": "particleObj.Delete()"},
-    {"create": "App.Scene.Add(Poi)", "cleanup": "poiObj.Delete()"},
-    {"create": "App.Scene.Add(Text3D)", "cleanup": "text3dObj.Delete()"},
-    {"create": "App.Scene.Add(Window)", "cleanup": "windowObj.Delete()"},
-    {"create": "RegisterSceneEvent", "cleanup": "UnregisterSceneEvent"}
+    {"create": "new App.Particle({...}) + App.Scene.Add(entity)", "cleanup": "particleObj.Delete()"},
+    {"create": "new App.Poi({...}) + App.Scene.Add(entity)", "cleanup": "poiObj.Delete()"},
+    {"create": "new App.Text3D({...}) + App.Scene.Add(entity)", "cleanup": "text3dObj.Delete()"},
+    {"create": "new App.Window({...}) + App.Scene.Add(entity)", "cleanup": "windowObj.Delete()"},
+    {"create": "RegisterSceneEvent", "cleanup": "UnRegisterSceneEvent"}
   ],
   "pattern": {
     "type": "fire-alert-response",
@@ -191,7 +227,7 @@
       "告警POI点击联动",
       "3D文字状态提示",
       "视频监控窗口联动",
-      "相机聚焦与降级"
+      "相机聚焦"
     ]
   }
 }
