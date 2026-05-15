@@ -292,7 +292,7 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
   const sceneGuidance = scene
     ? `🎯 当前场景：${scene.name} — ${scene.goal}\n`
     : '';
-  const baseGuidance = '🚨 请严格按 workflow_steps 顺序读取所有 Skill 文件，禁止跳过任何步骤。所有 WDP API 的正确签名和参数格式均以 Skill 文件为准，禁止凭记忆编造 API 调用。';
+  const baseGuidance = '🚨 请严格按 workflow_steps 顺序读取所有 Skill 文件。对每个 Skill 文件，必须使用 read_knowledge_file 并传 force_full: true 以获取完整 API 签名和 demo.js 示例。禁止凭记忆编造任何 API 调用，所有方法名、参数名、参数类型必须以 Skill 文件全文内容为准。';
 
   return {
     user_requirement: userRequirement,
@@ -367,12 +367,13 @@ const MCP_TOOL_DEFINITIONS: McpToolDef[] = [
   },
   {
     name: 'enforce_routing_check',
-    description: '🚨 防幻觉核心校验工具：强制 AI 在生成代码前必须读取所有路由匹配的 Skill 文件。未通过此校验前，禁止生成任何 WDP API 代码。Skill 文件包含正确的 API 签名和 demo.js 代码示例，跳过阅读将导致 API 幻觉。',
+    description: '🚨 防幻觉核心校验工具：强制 AI 在生成代码前必须读取所有路由匹配的 Skill 文件全文。未通过此校验前，禁止生成任何 WDP API 代码。Skill 文件包含正确的 API 签名和 demo.js 代码示例，跳过全文阅读将导致 API 幻觉。',
     inputSchema: {
       type: 'object',
       properties: {
         workflow_result: { type: 'object', description: 'start_wdp_workflow 返回结果' },
-        skills_read: { type: 'array', items: { type: 'string' }, description: 'AI 已读取的 Skill 路径列表' },
+        skills_read: { type: 'array', items: { type: 'string' }, description: 'AI 已读取的 Skill 路径列表（全文模式）' },
+        full_read_skills: { type: 'array', items: { type: 'string' }, description: 'AI 以 force_full: true 读取的 Skill 路径列表（可选，如提供则校验全文覆盖率）' },
       },
       required: ['workflow_result', 'skills_read'],
     },
@@ -455,16 +456,36 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
     case 'enforce_routing_check': {
       const workflowResult = args.workflow_result as any;
       const skillsRead = (args.skills_read as string[]) || [];
+      const fullReadSkills = (args.full_read_skills as string[]) || [];
       const required = (workflowResult?.matched_skills || []) as string[];
-      const missing = required.filter((s: string) => !skillsRead.includes(s));
+
+      // 基础校验：是否都读了
+      const notRead = required.filter((s: string) => !skillsRead.includes(s));
+      // 全文校验：如果提供了 full_read_skills，检查是否都用全文模式读过
+      const notFullRead = fullReadSkills.length > 0
+        ? required.filter((s: string) => !fullReadSkills.includes(s))
+        : [];
+
+      const passed = notRead.length === 0 && notFullRead.length === 0;
+
+      let message: string;
+      if (passed) {
+        message = '✅ 所有必需 Skill 已全文读取，API 签名已确认，可以安全生成代码。';
+      } else {
+        const issues: string[] = [];
+        if (notRead.length > 0) issues.push(`${notRead.length} 个 Skill 未读取: ${notRead.join(', ')}`);
+        if (notFullRead.length > 0) issues.push(`${notFullRead.length} 个 Skill 未用全文模式读取: ${notFullRead.join(', ')}。请用 read_knowledge_file 传 force_full: true 重新读取`);
+        message = `🚨 防幻觉阻断：${issues.join('；')}。禁止生成代码！这些文件包含正确的 API 签名和参数格式，跳过将导致 API 幻觉。`;
+      }
+
       return {
-        passed: missing.length === 0,
+        passed,
         required_count: required.length,
         read_count: skillsRead.length,
-        missing_skills: missing,
-        message: missing.length === 0
-          ? '✅ 所有必需 Skill 已读取，API 签名已确认，可以安全生成代码。'
-          : `🚨 防幻觉阻断：缺少 ${missing.length} 个 Skill 文件未读取。禁止生成代码！这些文件包含正确的 API 签名和参数格式，跳过将导致 API 幻觉。缺失: ${missing.join(', ')}`,
+        full_read_count: fullReadSkills.length,
+        missing_skills: notRead,
+        not_full_read: notFullRead,
+        message,
       };
     }
 
