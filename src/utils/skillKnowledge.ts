@@ -114,19 +114,31 @@ function generateDigest(content: string): { summary: string; fileHash: string; l
 
 // ========== 路由引擎 ==========
 
+function stripBom(content: string): string {
+  return content.charCodeAt(0) === 0xFEFF ? content.slice(1) : content;
+}
+
 function loadRouteMapping(): RouteMapping {
   if (routeMapping) return routeMapping;
   const configPath = path.resolve(__dirname, '../../config/skill-route-mapping.json');
-  const data = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as RouteMapping;
-  routeMapping = data;
-  return data;
+  try {
+    const raw = fs.readFileSync(configPath, 'utf-8');
+    const data = JSON.parse(stripBom(raw)) as RouteMapping;
+    routeMapping = data;
+    return data;
+  } catch (error: any) {
+    console.error(`[SkillKnowledge] 路由映射加载失败: ${error.message}`);
+    // 返回空路由，服务降级运行
+    routeMapping = { version: '0.0.0', routes: [], baseSkills: [], builtinSkills: [] };
+    return routeMapping;
+  }
 }
 
 let apiPatternsCache: any[] | null = null;
 function loadApiPatterns(): any[] {
   if (!apiPatternsCache) {
     const p = path.resolve(__dirname, '../../config/api-patterns.json');
-    apiPatternsCache = fs.existsSync(p) ? ((JSON.parse(fs.readFileSync(p, 'utf-8')) as any).patterns || []) : [];
+    apiPatternsCache = fs.existsSync(p) ? ((JSON.parse(stripBom(fs.readFileSync(p, 'utf-8'))) as any).patterns || []) : [];
   }
   return apiPatternsCache || [];
 }
@@ -138,7 +150,7 @@ function loadSceneIndex(): SceneIndex | null {
   if (sceneIndex) return sceneIndex;
   const p = path.resolve(__dirname, '../../config/business-scenarios/_index.json');
   if (!fs.existsSync(p)) return null;
-  sceneIndex = JSON.parse(fs.readFileSync(p, 'utf-8')) as SceneIndex;
+  sceneIndex = JSON.parse(stripBom(fs.readFileSync(p, 'utf-8'))) as SceneIndex;
   return sceneIndex;
 }
 
