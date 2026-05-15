@@ -1,4 +1,5 @@
 {
+  "_warning": "⚠️ 本文档中的 API 名称（如 App.Scene.Creates、App.CameraControl.SetCameraPose 等）来自旧版摘录，可能与当前 Skill 文件中的实际 API 签名不一致。所有 API 调用必须以 Skill 文件正文为准，本文档仅供流程参考。",
   "patterns": [
     {
       "id": "wdp-poi-window-interaction",
