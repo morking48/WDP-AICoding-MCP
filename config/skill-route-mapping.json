@@ -254,7 +254,10 @@
                                        "热力图"
                                    ],
                        "relatedSkills":  [
-
+                                             "reference/scene/covering/columnar-heatmap/SKILL.md",
+                                             "reference/scene/covering/mesh-heatmap/SKILL.md",
+                                             "reference/scene/covering/road-heatmap/SKILL.md",
+                                             "reference/scene/covering/space-heatmap/SKILL.md"
                                          ]
                    },
                    {

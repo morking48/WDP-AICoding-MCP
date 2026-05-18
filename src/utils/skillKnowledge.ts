@@ -36,23 +36,37 @@ let routeMapping: RouteMapping | null = null;
 
 // ========== 关键词权重表 ==========
 const KEYWORD_WEIGHTS: Record<string, number> = {
+  // 强意图信号（权重 3）：出现即路由
   '初始化': 3, 'sdk': 3, 'wdpapi': 3, 'scene ready': 3,
-  '相机': 2, 'camera': 2, 'flyto': 2, '漫游': 2, '跟随': 2,
-  'poi': 2, '热力图': 3, 'heatmap': 3, '路径': 2, 'path': 2,
-  '浮窗': 2, 'window': 2, '3d文字': 2, 'text3d': 2,
+  'new WdpApi': 3, '启动渲染': 3,
+  'bim': 3, 'dcp': 3, '构件': 3, '楼层': 3, '高亮': 3,
+  'gis': 3, 'geolayer': 3, '3dtiles': 3,
+  'flood': 3, 'dynamic water': 3, '洪水': 3,
+  '热力图': 3, 'heatmap': 3,
+  '骨骼动画': 3, 'skeletal': 3,
+  'RegisterSceneEvent': 3, '事件注册': 3,
+  '飞行': 3, 'flyto': 3,
+  // 普通信号（权重 2）：辅助匹配
+  '接入': 2, 'config': 2,
+  '相机': 2, 'camera': 2, '漫游': 2, '跟随': 2, '聚焦': 2, '镜头': 2, '视角': 2, '第三人称': 2,
+  'poi': 2, '点位': 2, '标注': 2, '图标': 2,
+  '路径': 2, 'path': 2, '画线': 2, '绘制路径': 2, '沿路径移动': 2, '路径移动': 2, 'bound': 2,
+  '浮窗': 2, 'window': 2, '弹窗': 2, '窗口': 2,
+  '3d文字': 2, 'text3d': 2,
   '灯光': 2, 'light': 2, '粒子': 2, 'particle': 2,
   '可视域': 2, 'viewshed': 2, '抛物线': 2, 'parabola': 2,
-  '静态模型': 2, 'static model': 2, '骨骼动画': 3, 'skeletal': 3,
+  '区域': 2, '轮廓': 2, '范围': 2, 'range': 2,
+  '静态模型': 2, 'static model': 2, '模型放置': 2,
   '植被': 2, 'vegetation': 2, '工程模型': 2, 'project model': 2,
   '建模': 2, 'modeler': 2, '场景': 2, 'scene': 2, '批量': 2, '选择集': 2,
-  'bim': 3, 'dcp': 3, '构件': 3, '楼层': 3,
-  'gis': 3, 'geolayer': 3, '3dtiles': 3,
-  'wim': 2, 'flood': 3, 'pipe': 2, 'dynamic water': 3,
+  'wim': 2, 'pipe': 2, 'cae': 2,
   '事件': 2, 'event': 2, '材质': 2, 'material': 2,
   '坐标': 2, 'coordinate': 2, '测量': 2, 'measure': 2,
-  '渲染': 2, 'renderer': 2, '环境': 2, '天气': 2,
+  '渲染': 2, 'renderer': 2, '系统': 2, 'system': 2,
+  '天空': 2, '光照': 2, '雾': 2, '天气': 2, '环境': 2,
   '特效': 2, 'effects': 2, '剖切': 2, 'section': 2,
   '中国地图': 2, '颜色': 2, '屏幕': 2, '形状': 2,
+  '实时视频': 2, '视频融合': 2, '监控': 2,
 };
 
 // ========== 歧义消解规则 ==========
