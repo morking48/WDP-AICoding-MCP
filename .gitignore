@@ -16,6 +16,7 @@ data/
 # Local development
 LAN_TEST_GUIDE.md
 start-server.bat
+sync-routes.bat
 DEVELOPMENT_PLAN.md
 ACTION_GUIDE.md
 README.md
