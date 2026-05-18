@@ -7,6 +7,8 @@
     "dev": "ts-node src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
+    "sync-routes": "ts-node --transpile-only scripts/sync-routes.ts",
+    "sync-check": "ts-node --transpile-only scripts/sync-routes.ts --ci",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
