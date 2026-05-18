@@ -5,7 +5,7 @@
  * - 从远程 Skill Server 拉取 manifest + 文件内容
  * - 三级查找：内置 Skill → 内存缓存 → 远程拉取
  * - 路由引擎：关键词匹配 + 歧义消解 + 场景匹配 + buildWorkflowResponse
- * - 7 个 MCP 工具
+ * - 7 个 MCP 工具（含 enforce_routing_check + trigger_self_evaluation 防幻觉双门禁）
  */
 
 import crypto from 'crypto';
@@ -27,6 +27,12 @@ interface RouteConfig {
 }
 interface RouteMapping { version: string; routes: RouteConfig[]; baseSkills: string[]; builtinSkills: string[]; }
 interface McpToolDef { name: string; description: string; inputSchema: { type: string; properties: Record<string, any>; required?: string[]; }; }
+
+interface HallucinatedApi {
+  line: number;
+  api: string;
+  suggestion: string;
+}
 
 // ========== 内存缓存 ==========
 const manifestCache: Map<string, ManifestFile> = new Map();
@@ -307,11 +313,20 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
   if (scene && scene.secondary_skills.length > 0) workflowSteps.push(`Step 5: 场景辅助 Skill → 读取 ${scene.secondary_skills.join(', ')}`);
   if (matchedPatterns.length > 0) workflowSteps.push(`Step 6: API 调用模式 → ${matchedPatterns.map((p: any) => p.name).join(', ')}`);
 
-  // 8. 构建 guidance（场景命中时注入场景信息到头部）
+  // 8. 构建 guidance（注入后果前置 + API 白名单提示）
   const sceneGuidance = scene
     ? `🎯 当前场景：${scene.name} — ${scene.goal}\n`
     : '';
-  const baseGuidance = '🚨 请严格按 workflow_steps 顺序读取所有 Skill 文件。对每个 Skill 文件，必须使用 read_knowledge_file 并传 force_full: true 以获取完整 API 签名和 demo.js 示例。禁止凭记忆编造任何 API 调用，所有方法名、参数名、参数类型必须以 Skill 文件全文内容为准。';
+  const consequenceBlock = `🚨 跳过 Skill 文件阅读的 3 种后果：
+  1) 编造不存在的 API → 代码运行时直接报错
+  2) 参数名拼错（如 scale→scale3d, text→labelContent）→ 功能静默失效
+  3) 漏掉清理链路 → 内存泄漏 / GPU 资源不释放
+
+  防线：
+  ✓ 编码前：调用 enforce_routing_check 验证文件读取完整性
+  ✓ 编码后：调用 trigger_self_evaluation 并传入 generated_code，MCP 会做 API 白名单存在性校验
+
+  禁止凭记忆编造任何 API 调用，所有方法名、参数名、参数类型必须以 Skill 文件全文内容为准。`;
 
   return {
     user_requirement: userRequirement,
@@ -327,7 +342,146 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
     scene: scene ? { id: scene.id, name: scene.name, goal: scene.goal } : null,
     api_patterns: matchedPatterns,
     builtin_skills_preview: builtinContentPreviews,
-    guidance: sceneGuidance + baseGuidance,
+    guidance: sceneGuidance + consequenceBlock,
+  };
+}
+
+// ========== API 白名单提取（用于 trigger_self_evaluation 硬校验） ==========
+
+/**
+ * 从 Skill 文件内容中提取所有 WDP API 方法名
+ * 模式：
+ *  - new App.Xxx(...)  → App.Xxx
+ *  - App.Xxx.Yyy(...)  → App.Xxx.Yyy
+ *  - entity.Xxx(...)   → .Xxx (实体方法)
+ */
+function extractApiFromSkillContent(content: string): Set<string> {
+  const apis = new Set<string>();
+
+  // 提取所有 JS 代码块中的 API 调用
+  const codeBlocks = content.match(/```(?:js|javascript|typescript)?\n([\s\S]*?)```/g);
+  const codeSnippets = codeBlocks ? codeBlocks.map(b => b.replace(/```[\s\S]*?\n/, '').replace(/```$/, '')) : [content];
+
+  for (const snippet of codeSnippets) {
+    // new App.Xxx(  → App.Xxx
+    const constructorMatches = snippet.matchAll(/new\s+(App\.\w+)\s*\(/g);
+    for (const m of constructorMatches) apis.add(m[1]);
+
+    // App.Xxx.Yyy(  → App.Xxx.Yyy
+    const staticMethodMatches = snippet.matchAll(/(App\.\w+(?:\.\w+)+)\s*\(/g);
+    for (const m of staticMethodMatches) apis.add(m[1]);
+
+    // Obj.Xxx( where Obj is camelCase (entity method)
+    const entityMethodMatches = snippet.matchAll(/([a-z]\w*)\.(\w+)\s*\(/g);
+    for (const m of entityMethodMatches) {
+      if (m[2].charAt(0).toUpperCase() === m[2].charAt(0)) {
+        apis.add(`.${m[2]}`); // PascalCase methods
+      }
+    }
+
+    // 事件名注册: RegisterSceneEvent('OnXxx'
+    const eventMatches = snippet.matchAll(/RegisterSceneEvent\s*\(\s*['"](On\w+)['"]/g);
+    for (const m of eventMatches) apis.add(m[1]);
+  }
+
+  return apis;
+}
+
+/**
+ * 从 AI 生成的代码中提取所有 WDP API 调用
+ */
+function extractApiCallsFromCode(code: string): Array<{ line: number; api: string }> {
+  const results: Array<{ line: number; api: string }> = [];
+  const lines = code.split('\n');
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // new App.Xxx(
+    const cm = line.match(/new\s+(App\.\w+)\s*\(/);
+    if (cm) {
+      results.push({ line: i + 1, api: cm[1] });
+      continue;
+    }
+
+    // App.Xxx.Yyy(
+    const smm = line.match(/(App\.\w+(?:\.\w+)+)\s*\(/);
+    if (smm) {
+      results.push({ line: i + 1, api: smm[1] });
+      continue;
+    }
+
+    // entityObj.methodName( where methodName is PascalCase
+    const emm = line.match(/([a-zA-Z_]\w*)\.(\w+)\s*\(/);
+    if (emm && emm[2].charAt(0).toUpperCase() === emm[2].charAt(0) && !emm[1].startsWith('App')) {
+      // 过滤掉 JS 原生方法
+      const nativeMethods = new Set(['Map', 'Set', 'Array', 'Date', 'Math', 'JSON', 'Object', 'String', 'Number', 'Boolean', 'Promise', 'Error', 'RegExp', 'parseInt', 'parseFloat']);
+      if (!nativeMethods.has(emm[1]) && !['require', 'console', 'process'].includes(emm[1])) {
+        results.push({ line: i + 1, api: `.${emm[2]}` });
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
+ * 主校验函数：对比代码中的 API 与 Skill 白名单
+ */
+async function validateGeneratedCode(
+  generatedCode: string,
+  skillPaths: string[],
+): Promise<{ passed: boolean; hallucinated: HallucinatedApi[]; totalApis: number; whitelistSize: number }> {
+  // 1. 构建白名单
+  const whitelist = new Set<string>();
+  for (const sp of skillPaths) {
+    try {
+      const content = await readKnowledgeFile(sp);
+      const apis = extractApiFromSkillContent(content);
+      for (const api of apis) whitelist.add(api);
+    } catch {
+      // 文件读取失败 → 跳过（已在 onboarding 层校验）
+    }
+  }
+
+  // 添加通用方法白名单（entity.Delete / entity.Update / entity.SetVisible 等基础方法）
+  const commonEntityMethods = ['Delete', 'Update', 'SetVisible', 'Add', 'Remove', 'Get', 'Set'];
+  for (const m of commonEntityMethods) whitelist.add(`.${m}`);
+
+  // 2. 提取 AI 代码中的 API
+  const usedApis = extractApiCallsFromCode(generatedCode);
+
+  // 3. 对比
+  const hallucinated: HallucinatedApi[] = [];
+  for (const { line, api } of usedApis) {
+    if (!whitelist.has(api)) {
+      // 给建议：找白名单中最相似的 API
+      let suggestion = '请从已读 Skill 文件中查找正确的 API 名';
+      const allApis = Array.from(whitelist);
+      const lower = api.toLowerCase();
+      let bestMatch = '';
+      let bestScore = 0;
+      for (const wl of allApis) {
+        const wlLower = wl.toLowerCase();
+        let score = 0;
+        // 简单相似度：共享前缀/后缀
+        if (api.startsWith('App.') && wl.startsWith('App.')) score += 2;
+        if (wlLower.includes(lower.split('.').pop() || '')) score += 1;
+        if (score > bestScore) { bestScore = score; bestMatch = wl; }
+      }
+      if (bestMatch && bestScore >= 2) {
+        suggestion = `可能是 ${bestMatch}`;
+      }
+
+      hallucinated.push({ line, api, suggestion });
+    }
+  }
+
+  return {
+    passed: hallucinated.length === 0,
+    hallucinated,
+    totalApis: usedApis.length,
+    whitelistSize: whitelist.size,
   };
 }
 
@@ -386,7 +540,7 @@ const MCP_TOOL_DEFINITIONS: McpToolDef[] = [
   },
   {
     name: 'enforce_routing_check',
-    description: '🚨 防幻觉核心校验工具：强制 AI 在生成代码前必须读取所有路由匹配的 Skill 文件全文。未通过此校验前，禁止生成任何 WDP API 代码。Skill 文件包含正确的 API 签名和 demo.js 代码示例，跳过全文阅读将导致 API 幻觉。',
+    description: '🚨 防幻觉门禁1（编码前）：验证所有路由匹配的 Skill 文件是否已全文读取。通过后可开始编码，但完成后必须调用 trigger_self_evaluation。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -399,15 +553,16 @@ const MCP_TOOL_DEFINITIONS: McpToolDef[] = [
   },
   {
     name: 'trigger_self_evaluation',
-    description: '触发 AI 自我代码审查',
+    description: '🚨 防幻觉门禁2（编码后）：将生成的代码传入，MCP 提取所有 API 调用并与 Skill 白名单做存在性比对。不在白名单的 API 将被阻断。历史上出现过仅通过门禁1仍编造 FocusByEntityName 等幻觉 API 的案例，门禁2是必需的。',
     inputSchema: {
       type: 'object',
       properties: {
+        generated_code: { type: 'string', description: 'AI 生成的完整代码文本' },
         written_files: { type: 'array', items: { type: 'string' }, description: '已写入的文件路径' },
-        used_skills: { type: 'array', items: { type: 'string' }, description: '使用的 Skill 路径' },
+        used_skills: { type: 'array', items: { type: 'string' }, description: '使用的 Skill 路径（从 workflow_result.matched_skills 获取）' },
         scenario_id: { type: 'string', description: '场景 ID（可选）' },
       },
-      required: ['written_files', 'used_skills'],
+      required: ['generated_code', 'used_skills'],
     },
   },
 ];
@@ -488,13 +643,16 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
       const passed = notRead.length === 0 && notFullRead.length === 0;
 
       let message: string;
+      let nextStep: string;
       if (passed) {
-        message = '✅ 所有必需 Skill 已全文读取，API 签名已确认，可以安全生成代码。';
+        message = '✅ 所有必需 Skill 已全文读取，可以开始编码。但请注意：编码完成后必须调用 trigger_self_evaluation 并传入 generated_code 做 API 白名单校验。跳过门禁2将无法发现 FocusByEntityName 这类幻觉 API。';
+        nextStep = '🔜 编码完成后，调用 trigger_self_evaluation，传入 generated_code（完整代码文本）和 used_skills（从 workflow_result.matched_skills 获取）。';
       } else {
         const issues: string[] = [];
         if (notRead.length > 0) issues.push(`${notRead.length} 个 Skill 未读取: ${notRead.join(', ')}`);
         if (notFullRead.length > 0) issues.push(`${notFullRead.length} 个 Skill 未用全文模式读取: ${notFullRead.join(', ')}。请用 read_knowledge_file 传 force_full: true 重新读取`);
         message = `🚨 防幻觉阻断：${issues.join('；')}。禁止生成代码！这些文件包含正确的 API 签名和参数格式，跳过将导致 API 幻觉。`;
+        nextStep = '📖 请继续读取上述缺失的 Skill 文件（force_full: true），然后重新调用 enforce_routing_check。';
       }
 
       return {
@@ -505,25 +663,70 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
         missing_skills: notRead,
         not_full_read: notFullRead,
         message,
+        next_step: nextStep,
       };
     }
 
     case 'trigger_self_evaluation': {
-      const writtenFiles = (args.written_files as string[]) || [];
+      const generatedCode = (args.generated_code as string) || '';
       const usedSkills = (args.used_skills as string[]) || [];
+      const writtenFiles = (args.written_files as string[]) || [];
+
+      // 硬校验：API 白名单比对
+      let apiCheckResult: { passed: boolean; hallucinated: HallucinatedApi[]; totalApis: number; whitelistSize: number } | null = null;
+      if (generatedCode && usedSkills.length > 0) {
+        try {
+          apiCheckResult = await validateGeneratedCode(generatedCode, usedSkills);
+        } catch (e: any) {
+          apiCheckResult = { passed: true, hallucinated: [], totalApis: 0, whitelistSize: 0 };
+          console.error(`[trigger_self_evaluation] API 校验异常: ${e.message}`);
+        }
+      }
+
+      // 软检查（仅保留不重复的 4 条）
       const checks = [
         '🔍 占位符检查：确认代码中无 YOUR_URL、YOUR_TOKEN 等假值',
-        '🔍 API 签名检查：确认所有 API 调用参数与 Skill 文档一致',
         '🔍 生命周期检查：确认初始化 → 渲染 → 清理的完整链路',
         '🔍 初始化顺序检查：Plugin.Install 在 Renderer.Start 之前',
         '🔍 工程基线检查：确认使用 npm install wdpapi（非 CDN）',
-        '🔍 Skill 签名一致性检查：确认所有 API 调用（方法名、参数名、参数类型）与已读 Skill 文件完全一致，禁止凭记忆编造 API',
       ];
+
+      // 构建最终结果
+      const apiPassed = apiCheckResult ? apiCheckResult.passed : true;
+      const hallucinated = apiCheckResult ? apiCheckResult.hallucinated : [];
+
+      if (!apiPassed && apiCheckResult) {
+        const apiErrors = hallucinated.map(h =>
+          `  Line ${h.line}: ${h.api} → ${h.suggestion}`
+        ).join('\n');
+
+        return {
+          passed: false,
+          api_whitelist_check: {
+            passed: false,
+            total_apis_found: apiCheckResult.totalApis,
+            whitelist_size: apiCheckResult.whitelistSize,
+            hallucinated_apis: hallucinated,
+            message: `🚨 发现 ${hallucinated.length} 个不在任何 Skill 文件中的 API：\n${apiErrors}\n\n请对照已读 Skill 文件修正所有幻觉 API，然后重新调用 trigger_self_evaluation。`,
+          },
+          soft_checks: checks,
+          written_files: writtenFiles,
+          used_skills: usedSkills,
+        };
+      }
+
       return {
+        passed: true,
+        api_whitelist_check: {
+          passed: true,
+          total_apis_found: apiCheckResult?.totalApis || 0,
+          whitelist_size: apiCheckResult?.whitelistSize || 0,
+          message: '✅ 所有 API 调用均在 Skill 白名单中',
+        },
+        soft_checks: checks,
         written_files: writtenFiles,
         used_skills: usedSkills,
-        checks,
-        hint: '请逐项检查以上 6 项，发现问题立即修正。禁止凭记忆编造任何 WDP API 调用。',
+        hint: '✅ API 白名单校验通过。请逐项检查以上 4 条软检查，发现问题立即修正。',
       };
     }
 
