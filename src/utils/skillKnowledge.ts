@@ -589,7 +589,9 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
         const forceFull = args.force_full === true;
         if (forceFull) {
           const { fileHash, lineCount } = generateDigest(content);
-          return { path: filePath, content, fileHash, lineCount, mode: 'full' };
+          // 注入 API 白名单 — 编码时只能使用这些 API
+          const apiWhitelist = extractApiFromSkillContent(content);
+          return { path: filePath, content, fileHash, lineCount, mode: 'full', api_whitelist: [...apiWhitelist] };
         }
         const { summary, fileHash, lineCount } = generateDigest(content);
         return { path: filePath, summary, fileHash, lineCount, mode: 'summary' };

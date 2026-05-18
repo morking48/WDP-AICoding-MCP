@@ -43,16 +43,15 @@ description: WDP 意图编排与需求精确化。用于在编码前把自然语
 
 **所有 WDP API 的正确签名、参数格式和 demo.js 示例均以 Skill 文件为准，禁止凭记忆编造 API 调用。**
 
-### 🚨 Step 最后: 防幻觉双门禁（两个都必须过，缺一不可）
+### 🚨 防幻觉核心规则
 
-| 门禁 | 工具 | 何时调用 | 参数 | 不过的后果 |
-|------|------|----------|------|-----------|
-| 编码前 | `enforce_routing_check` | 读完所有 Skill 后 | `workflow_result` + `skills_read` | 禁止开始编码 |
-| 编码后 | `trigger_self_evaluation` | 写完代码后、提交给用户前 | `generated_code`（完整代码文本）+ `used_skills`（从 `matched_skills` 获取） | 无法发现幻觉 API，用户运行即报错 |
+1. **用 `force_full: true` 读取所有 Skill 文件**。返回体中已自动包含 `api_whitelist` — 这是该文件允许使用的全部 API 名列表。你只能使用白名单中的 API。
+2. **编码前调用 `enforce_routing_check`**：验证所有必需 Skill 已全文读取。未通过前禁止编码。
+3. **编码后调用 `trigger_self_evaluation`**：传入完整代码文本（`generated_code`）。MCP 会提取所有 API 调用并与白名单做存在性比对。不在白名单中的 API 将被阻断并提示正确 API 名。
 
-> ⚠️ 历史案例：AI 完整读取 camera-control/SKILL.md（1027行）后，仍编造了 `FocusByEntityName`。
-> 该 API 不在任何 Skill 文件中。仅靠门禁1无法防止此类"命名模式幻觉"。
-> 门禁2 会提取你的代码中所有 WDP API 调用，与 Skill 白名单做存在性比对——不在白名单中的将直接阻断。
+> ⚠️ 历史案例：AI 完整读取 camera-control/SKILL.md 后，仍凭记忆编造了 `FocusByEntityName`。
+> 实际的 `api_whitelist` 中只有 `FocusToAll`、`Focus`、`FlyTo`、`Follow`、`Around`。
+> 仅靠"读了文件"无法防止此类幻觉。编码后务必调用 `trigger_self_evaluation` 做最终验证。
 
 ## 统一基线
 
@@ -119,7 +118,7 @@ description: WDP 意图编排与需求精确化。用于在编码前把自然语
 
 ## 输出要求
 
-输出 `《系统意图与架构设计报告》`：
+输出 `《系统意图与架构设计报告》` 到 ` projectpath `，需要包含以下信息：
 
 1. **原始诉求**：用户的自然语言需求
 2. **子任务拆解**：主任务和子任务列表

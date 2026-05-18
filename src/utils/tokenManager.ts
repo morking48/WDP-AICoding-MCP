@@ -40,7 +40,9 @@ const TOKEN_STORE: Map<string, TokenInfo> = new Map();
 const TOKEN_FILE = path.resolve(__dirname, '../../config/tokens.json');
 
 // 管理员Token（用于管理接口）
-let ADMIN_TOKEN: string = process.env.ADMIN_TOKEN || 'admin-secret-token';
+// 优先级：环境变量 ADMIN_TOKEN > config/tokens.json adminToken > 此默认值
+const DEFAULT_ADMIN_TOKEN = 'MRZZ2Pi7SHUVfPAzYqBzXrfE';
+let ADMIN_TOKEN: string = process.env.ADMIN_TOKEN || DEFAULT_ADMIN_TOKEN;
 
 /**
  * 初始化Token管理器
@@ -60,8 +62,14 @@ export function initTokenManager(): void {
   
   // 从文件加载持久化的Token
   loadTokensFromFile();
+
+  // 如果 tokens.json 不存在，自动创建初始模板（防止全新部署时 admin token 丢失）
+  if (!fs.existsSync(TOKEN_FILE)) {
+    saveTokensToFile();
+    console.log('[TokenManager] 已自动创建 config/tokens.json 初始模板');
+  }
   
-  console.log(`[TokenManager] 已加载 ${TOKEN_STORE.size} 个Token`);
+  console.log(`[TokenManager] 已加载 ${TOKEN_STORE.size} 个Token, AdminToken=${ADMIN_TOKEN === DEFAULT_ADMIN_TOKEN ? '默认值' : '来自配置'}`);
 }
 
 /**
