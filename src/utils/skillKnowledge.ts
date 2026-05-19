@@ -247,7 +247,7 @@ function applyDisambiguation(requirement: string, keywordResults: { domain: stri
   return null;
 }
 
-function buildWorkflowResponse(userRequirement: string, projectPath: string): any {
+async function buildWorkflowResponse(userRequirement: string, projectPath: string): Promise<any> {
   const mapping = loadRouteMapping();
 
   // 1. 场景模板匹配（优先执行，场景=主裁判，旧版架构核心逻辑）
@@ -344,9 +344,9 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
   ✓ 编码前：调用 enforce_routing_check 验证文件读取完整性
   ✓ 编码后：调用 trigger_self_evaluation 并传入 generated_code，MCP 会做 API 白名单存在性校验
 
-  禁止凭记忆编造任何 API 调用，所有方法名、参数名、参数类型必须以 Skill 文件全文内容为准。`;
+  🚨 未调用 enforce_routing_check 和 trigger_self_evaluation 之前禁止生成代码。`;
 
-  // 场景命中 → 加载场景详情（task_breakdown / api_flow / data_flow / cleanup_chain / required_clarifications）
+  // 场景命中 → 加载场景详情
   let sceneDetail: SceneDetail | null = null;
   if (scene && scene.file) {
     sceneDetail = loadSceneDetail(scene.id);
@@ -356,6 +356,20 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
   if (sceneDetail?.task_breakdown) {
     for (const step of sceneDetail.task_breakdown) {
       workflowSteps.push(`🎯 场景任务: ${step}`);
+    }
+  }
+
+  // 9. 预提取 API 白名单摘要（不读全文，仅方法名列表，轻量注入防幻觉）
+  const skillApiSummaries: Array<{ path: string; apis: string[] }> = [];
+  for (const sp of matchedSkills) {
+    try {
+      const content = await readKnowledgeFile(sp);
+      const apis = [...extractApiFromSkillContent(content)];
+      if (apis.length > 0) {
+        skillApiSummaries.push({ path: sp, apis: apis.slice(0, 30) });
+      }
+    } catch {
+      // 读取失败跳过，AI 需自行调用 read_knowledge_file
     }
   }
 
@@ -378,6 +392,7 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
     } : null,
     api_patterns: matchedPatterns,
     builtin_skills_preview: builtinContentPreviews,
+    skill_api_summaries: skillApiSummaries,
     guidance: sceneGuidance + consequenceBlock,
   };
 }
@@ -716,8 +731,11 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
         nextStep = '📖 请继续读取上述缺失的 Skill 文件（force_full: true），然后重新调用 enforce_routing_check。';
       }
 
+      const blocked = !passed;
+
       return {
         passed,
+        blocked,
         required_count: required.length,
         read_count: skillsRead.length,
         full_read_count: fullReadSkills.length,
