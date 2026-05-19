@@ -374,9 +374,6 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
     scene_detail: sceneDetail ? {
       task_breakdown: sceneDetail.task_breakdown,
       api_flow: sceneDetail.api_flow,
-      data_flow: sceneDetail.data_flow,
-      cleanup_chain: sceneDetail.cleanup_chain,
-      required_clarifications: sceneDetail.required_clarifications,
       modules: sceneDetail.modules?.map(m => ({ name: m.name, wdp_apis: m.wdp_apis, purpose: m.purpose })),
     } : null,
     api_patterns: matchedPatterns,
@@ -424,6 +421,25 @@ function extractApiFromSkillContent(content: string): Set<string> {
   }
 
   return apis;
+}
+
+/**
+ * 从 api_flow 的 api 字符串中提取标准化 API 名
+ * "new App.Path({...})" → "App.Path"
+ * "App.CameraControl.UpdateCamera" → "App.CameraControl.UpdateCamera"
+ * "entityObj.Delete()" → ".Delete"
+ */
+function extractApiName(apiStr: string): string | null {
+  // new App.Xxx( → App.Xxx
+  const cm = apiStr.match(/new\s+(App\.\w+)\s*\(/);
+  if (cm) return cm[1];
+  // App.Xxx.Yyy( → App.Xxx.Yyy
+  const smm = apiStr.match(/(App\.\w+(?:\.\w+)+)\s*\(/);
+  if (smm) return smm[1];
+  // obj.method( → .Method
+  const emm = apiStr.match(/\.(\w+)\s*\(/);
+  if (emm && emm[1].charAt(0).toUpperCase() === emm[1].charAt(0)) return `.${emm[1]}`;
+  return null;
 }
 
 /**
@@ -717,23 +733,50 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
       const usedSkills = (args.used_skills as string[]) || [];
       const writtenFiles = (args.written_files as string[]) || [];
 
-      // 硬校验：API 白名单比对
+      // 硬校验1：API 白名单比对
       let apiCheckResult: { passed: boolean; hallucinated: HallucinatedApi[]; totalApis: number; whitelistSize: number } | null = null;
+      // 硬校验2：场景 api_flow 步骤覆盖检查
+      let stepCoverage: { passed: boolean; missing_steps: Array<{ step: number; description: string; api: string }>; total_steps: number } | null = null;
+
       if (generatedCode && usedSkills.length > 0) {
-        // 如果传了 scenario_id，加载场景 modules[].wdp_apis 作为白名单补充
+        // 如果传了 scenario_id，加载场景详情
         let sceneApiList: string[] = [];
+        let sceneApiFlow: SceneDetail['api_flow'] | undefined;
         const scenarioId = (args.scenario_id as string) || '';
         if (scenarioId) {
           const sd = loadSceneDetail(scenarioId);
           if (sd?.modules) {
             for (const m of sd.modules) sceneApiList.push(...m.wdp_apis);
           }
+          sceneApiFlow = sd?.api_flow;
         }
         try {
           apiCheckResult = await validateGeneratedCode(generatedCode, usedSkills, sceneApiList);
         } catch (e: any) {
           apiCheckResult = { passed: true, hallucinated: [], totalApis: 0, whitelistSize: 0 };
           console.error(`[trigger_self_evaluation] API 校验异常: ${e.message}`);
+        }
+
+        // 步骤覆盖检查：逐 step 验证代码中是否包含对应 API
+        if (sceneApiFlow && sceneApiFlow.length > 0) {
+          const usedApiNames = extractApiCallsFromCode(generatedCode).map(a => a.api);
+          const missingSteps: Array<{ step: number; description: string; api: string }> = [];
+          for (const s of sceneApiFlow) {
+            // 提取 api 字段中的方法名（如 "new App.Path({...})" → "App.Path"）
+            const apiNames = (s.api || '').split('+').map(a => a.trim());
+            const found = apiNames.some(name => {
+              const extracted = extractApiName(name);
+              return extracted ? usedApiNames.includes(extracted) : false;
+            });
+            if (!found) {
+              missingSteps.push({ step: s.step, description: s.description, api: s.api });
+            }
+          }
+          stepCoverage = {
+            passed: missingSteps.length === 0,
+            missing_steps: missingSteps,
+            total_steps: sceneApiFlow.length,
+          };
         }
       }
 
@@ -748,24 +791,36 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
       // 构建最终结果
       const apiPassed = apiCheckResult ? apiCheckResult.passed : true;
       const hallucinated = apiCheckResult ? apiCheckResult.hallucinated : [];
+      const stepPassed = stepCoverage ? stepCoverage.passed : true;
 
-      if (!apiPassed && apiCheckResult) {
-        const apiErrors = hallucinated.map(h =>
-          `  Line ${h.line}: ${h.api} → ${h.suggestion}`
-        ).join('\n');
+      if ((!apiPassed || !stepPassed) && apiCheckResult) {
+        const errors: string[] = [];
+        if (!apiPassed) {
+          errors.push(...hallucinated.map(h => `  Line ${h.line}: ${h.api} → ${h.suggestion}`));
+        }
+        if (!stepPassed && stepCoverage) {
+          errors.push(`\n⚠️ 场景步骤缺失 (${stepCoverage.missing_steps.length}/${stepCoverage.total_steps}):`);
+          errors.push(...stepCoverage.missing_steps.map(s => `  Step ${s.step}: ${s.description} → 缺少 ${s.api}`));
+        }
 
         return {
           passed: false,
           api_whitelist_check: {
-            passed: false,
+            passed: apiPassed,
             total_apis_found: apiCheckResult.totalApis,
             whitelist_size: apiCheckResult.whitelistSize,
             hallucinated_apis: hallucinated,
-            message: `🚨 发现 ${hallucinated.length} 个不在任何 Skill 文件中的 API：\n${apiErrors}\n\n请对照已读 Skill 文件修正所有幻觉 API，然后重新调用 trigger_self_evaluation。`,
+            message: apiPassed ? '✅ 白名单通过' : `🚨 发现 ${hallucinated.length} 个不在任何 Skill 文件中的 API`,
           },
+          step_coverage_check: stepCoverage ? {
+            passed: stepCoverage.passed,
+            total_steps: stepCoverage.total_steps,
+            missing_steps: stepCoverage.missing_steps,
+          } : null,
           soft_checks: checks,
           written_files: writtenFiles,
           used_skills: usedSkills,
+          message: [`🚨 校验未通过，请修正以下问题后重新调用 trigger_self_evaluation：`, ...errors].join('\n'),
         };
       }
 
@@ -777,10 +832,15 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
           whitelist_size: apiCheckResult?.whitelistSize || 0,
           message: '✅ 所有 API 调用均在 Skill 白名单中',
         },
+        step_coverage_check: stepCoverage ? {
+          passed: true,
+          total_steps: stepCoverage.total_steps,
+          message: `✅ 全部 ${stepCoverage.total_steps} 个场景步骤已覆盖`,
+        } : null,
         soft_checks: checks,
         written_files: writtenFiles,
         used_skills: usedSkills,
-        hint: '✅ API 白名单校验通过。请逐项检查以上 4 条软检查，发现问题立即修正。',
+        hint: '✅ 硬校验通过。请逐项检查以上 4 条软检查，发现问题立即修正。',
       };
     }
 
