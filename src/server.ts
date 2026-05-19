@@ -66,14 +66,9 @@ function authMiddleware(req: express.Request, res: express.Response, next: expre
 }
 
 function adminAuthMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ error: '缺少管理员 Token' });
-    return;
-  }
-  const token = authHeader.slice(7);
-  if (!verifyAdminToken(token)) {
-    res.status(403).json({ error: '管理员 Token 无效' });
+  const adminToken = req.headers['x-admin-token'] as string;
+  if (!adminToken || !verifyAdminToken(adminToken)) {
+    res.status(403).json({ error: '无效的管理员Token' });
     return;
   }
   next();
