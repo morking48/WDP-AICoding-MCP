@@ -17,7 +17,7 @@ async function request(method: string, path: string, body?: any): Promise<any> {
     method,
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${ADMIN_TOKEN}`,
+      'X-Admin-Token': ADMIN_TOKEN,
     },
     body: body ? JSON.stringify(body) : undefined,
   });

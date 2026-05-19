@@ -26,7 +26,7 @@ MEMORY_CLEANUP_PLAN.md
 client/
 
 # Token manager (local tool, contains secrets)
-wdp-token-manager/
+/wdp-token-manager
 config/tokens.json
 
 # Reference docs (fetched from remote)

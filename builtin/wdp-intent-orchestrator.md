@@ -47,7 +47,7 @@ description: WDP 意图编排与需求精确化。用于在编码前把自然语
 
 1. **用 `force_full: true` 读取所有 Skill 文件**。返回体中已自动包含 `api_whitelist` — 这是该文件允许使用的全部 API 名列表。你只能使用白名单中的 API。
 2. **编码前调用 `enforce_routing_check`**：验证所有必需 Skill 已全文读取。未通过前禁止编码。
-3. **编码后调用 `trigger_self_evaluation`**：传入完整代码文本（`generated_code`）。MCP 会提取所有 API 调用并与白名单做存在性比对。不在白名单中的 API 将被阻断并提示正确 API 名。
+3. **编码后调用 `trigger_self_evaluation`**：传入完整代码文本（`generated_code`）+ `used_skills`（从 `workflow_result.matched_skills` 获取）+ `scenario_id`（从 `workflow_result.scene.id` 获取，如场景命中）。MCP 会做 API 白名单存在性比对 + 场景步骤覆盖检查。缺失步骤将被阻断并提示。
 
 > ⚠️ 历史案例：AI 完整读取 camera-control/SKILL.md 后，仍凭记忆编造了 `FocusByEntityName`。
 > 实际的 `api_whitelist` 中只有 `FocusToAll`、`Focus`、`FlyTo`、`Follow`、`Around`。
