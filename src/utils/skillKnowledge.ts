@@ -165,13 +165,31 @@ function loadApiPatterns(): any[] {
 
 interface SceneEntry { id: string; name: string; priority: number; goal: string; keywords: string[]; synonyms: string[]; primary_skills: string[]; secondary_skills: string[]; file: string | null; }
 interface SceneIndex { scenarios: SceneEntry[]; }
+interface SceneDetail {
+  id: string; name: string; goal: string;
+  task_breakdown?: string[];
+  api_flow?: Array<{ step: number; description: string; api: string; params: Record<string, any> }>;
+  data_flow?: Array<{ step: string; output: string; usage: string }>;
+  cleanup_chain?: Array<Record<string, string>>;
+  required_clarifications?: string[];
+  modules?: Array<{ name: string; wdp_apis: string[]; purpose: string }>;
+}
 let sceneIndex: SceneIndex | null = null;
+let sceneDetailCache: Map<string, SceneDetail> = new Map();
 function loadSceneIndex(): SceneIndex | null {
   if (sceneIndex) return sceneIndex;
   const p = path.resolve(__dirname, '../../config/business-scenarios/_index.json');
   if (!fs.existsSync(p)) return null;
   sceneIndex = JSON.parse(stripBom(fs.readFileSync(p, 'utf-8'))) as SceneIndex;
   return sceneIndex;
+}
+function loadSceneDetail(sceneId: string): SceneDetail | null {
+  if (sceneDetailCache.has(sceneId)) return sceneDetailCache.get(sceneId)!;
+  const p = path.resolve(__dirname, `../../config/business-scenarios/${sceneId}.json`);
+  if (!fs.existsSync(p)) return null;
+  const detail = JSON.parse(stripBom(fs.readFileSync(p, 'utf-8'))) as SceneDetail;
+  sceneDetailCache.set(sceneId, detail);
+  return detail;
 }
 
 function matchScene(input: string): SceneEntry | null {
@@ -328,6 +346,19 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
 
   禁止凭记忆编造任何 API 调用，所有方法名、参数名、参数类型必须以 Skill 文件全文内容为准。`;
 
+  // 场景命中 → 加载场景详情（task_breakdown / api_flow / data_flow / cleanup_chain / required_clarifications）
+  let sceneDetail: SceneDetail | null = null;
+  if (scene && scene.file) {
+    sceneDetail = loadSceneDetail(scene.id);
+  }
+
+  // 在 workflow_steps 中追加场景拆解步骤
+  if (sceneDetail?.task_breakdown) {
+    for (const step of sceneDetail.task_breakdown) {
+      workflowSteps.push(`🎯 场景任务: ${step}`);
+    }
+  }
+
   return {
     user_requirement: userRequirement,
     project_path: projectPath,
@@ -340,6 +371,14 @@ function buildWorkflowResponse(userRequirement: string, projectPath: string): an
     keyword_matches: keywordResults.slice(0, 5),
     disambiguation: disambiguatedDomain || null,
     scene: scene ? { id: scene.id, name: scene.name, goal: scene.goal } : null,
+    scene_detail: sceneDetail ? {
+      task_breakdown: sceneDetail.task_breakdown,
+      api_flow: sceneDetail.api_flow,
+      data_flow: sceneDetail.data_flow,
+      cleanup_chain: sceneDetail.cleanup_chain,
+      required_clarifications: sceneDetail.required_clarifications,
+      modules: sceneDetail.modules?.map(m => ({ name: m.name, wdp_apis: m.wdp_apis, purpose: m.purpose })),
+    } : null,
     api_patterns: matchedPatterns,
     builtin_skills_preview: builtinContentPreviews,
     guidance: sceneGuidance + consequenceBlock,
@@ -431,9 +470,13 @@ function extractApiCallsFromCode(code: string): Array<{ line: number; api: strin
 async function validateGeneratedCode(
   generatedCode: string,
   skillPaths: string[],
+  extraApiList: string[] = [],
 ): Promise<{ passed: boolean; hallucinated: HallucinatedApi[]; totalApis: number; whitelistSize: number }> {
   // 1. 构建白名单
   const whitelist = new Set<string>();
+
+  // 额外 API 白名单（来自场景 modules[].wdp_apis）
+  for (const api of extraApiList) whitelist.add(api);
   for (const sp of skillPaths) {
     try {
       const content = await readKnowledgeFile(sp);
@@ -677,8 +720,17 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
       // 硬校验：API 白名单比对
       let apiCheckResult: { passed: boolean; hallucinated: HallucinatedApi[]; totalApis: number; whitelistSize: number } | null = null;
       if (generatedCode && usedSkills.length > 0) {
+        // 如果传了 scenario_id，加载场景 modules[].wdp_apis 作为白名单补充
+        let sceneApiList: string[] = [];
+        const scenarioId = (args.scenario_id as string) || '';
+        if (scenarioId) {
+          const sd = loadSceneDetail(scenarioId);
+          if (sd?.modules) {
+            for (const m of sd.modules) sceneApiList.push(...m.wdp_apis);
+          }
+        }
         try {
-          apiCheckResult = await validateGeneratedCode(generatedCode, usedSkills);
+          apiCheckResult = await validateGeneratedCode(generatedCode, usedSkills, sceneApiList);
         } catch (e: any) {
           apiCheckResult = { passed: true, hallucinated: [], totalApis: 0, whitelistSize: 0 };
           console.error(`[trigger_self_evaluation] API 校验异常: ${e.message}`);
