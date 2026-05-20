@@ -24,6 +24,8 @@ interface SkillEntry { path: string; size: number; sha1: string; }
 interface RouteConfig {
   domain: string; label: string; skillPath: string;
   keywords: string[]; aliases: string[]; relatedSkills: string[];
+  pathSegments?: string[];
+  userSynonyms?: string[];  // v1.2: 用户常见物体名/动作动词 → 弥补自然语言≠API名称的鸿沟
 }
 interface RouteMapping { version: string; routes: RouteConfig[]; baseSkills: string[]; builtinSkills: string[]; }
 interface McpToolDef { name: string; description: string; inputSchema: { type: string; properties: Record<string, any>; required?: string[]; }; }
@@ -219,6 +221,10 @@ function matchKeywords(requirement: string): { domain: string; score: number }[]
     for (const alias of route.aliases) {
       if (lower.includes(alias.toLowerCase())) score += 2;
     }
+    // v1.2: userSynonyms 弥补自然语言 ≠ API名称 的鸿沟
+    for (const syn of (route.userSynonyms || [])) {
+      if (lower.includes(syn.toLowerCase())) score += 2;
+    }
     if (score > 0) scores.push({ domain: route.domain, score });
   }
   scores.sort((a, b) => b.score - a.score);
@@ -226,86 +232,44 @@ function matchKeywords(requirement: string): { domain: string; score: number }[]
 }
 
 /**
- * 中英关键词 → Skill 路径段 双向映射表
- * 覆盖所有 WDP 域：初始化 / 相机 / 覆盖物 / 模型 / 工具 / 环境 / 场景 / 系统 / 插件 / 数据模型 / 组件
- */
-const PATH_KEYWORD_MAP: Array<{ cn: string[]; en: string[] }> = [
-  { cn: ['初始化', '接入', '启动'], en: ['initialization', 'init'] },
-  { cn: ['渲染', '渲染器', 'renderer'], en: ['renderer'] },
-  { cn: ['相机', '飞行', '漫游', '聚焦', '跟随', '镜头', '视角'], en: ['camera', 'camera-control', 'flyto', 'roams', 'preset'] },
-  { cn: ['环境', '天空', '天气', '光照', '雾', '后期'], en: ['environment'] },
-  { cn: ['poi', '点位', '标注', '图标'], en: ['poi', 'custom-poi'] },
-  { cn: ['路径', '画线', '绘制路径'], en: ['path'] },
-  { cn: ['浮窗', '弹窗', '窗口', 'window'], en: ['window'] },
-  { cn: ['区域', '轮廓', '范围', 'range'], en: ['range'] },
-  { cn: ['3d文字', '文字', '文本', '标签', 'text3d'], en: ['text3d'] },
-  { cn: ['灯光', 'light'], en: ['light'] },
-  { cn: ['粒子', 'particle'], en: ['particle'] },
-  { cn: ['高亮区域', 'highlight'], en: ['highlight-area'] },
-  { cn: ['热力图', 'heatmap', '柱状热力', '空间热力', '道路热力'], en: ['heatmap', 'columnar-heatmap', 'mesh-heatmap', 'road-heatmap', 'space-heatmap'] },
-  { cn: ['可视域', '通视', 'viewshed'], en: ['viewshed'] },
-  { cn: ['抛物线', '弧线', 'parabola'], en: ['parabola'] },
-  { cn: ['栅格', 'raster', '图片'], en: ['raster'] },
-  { cn: ['实时视频', '视频融合', '监控'], en: ['real-time-video'] },
-  { cn: ['沿路径移动', '路径移动', 'bound'], en: ['bound'] },
-  { cn: ['特效', 'effects', '场景特效'], en: ['effects', 'scene-effects'] },
-  { cn: ['剖切', '截面', 'section'], en: ['section'] },
-  { cn: ['静态模型', '模型放置', 'static'], en: ['static', 'static-model'] },
-  { cn: ['骨骼动画', '骨骼', 'skeletal', '动画模型'], en: ['skeletal'] },
-  { cn: ['植被', '树', '草', 'vegetation'], en: ['vegetation'] },
-  { cn: ['工程模型', '工程摆放', 'project model'], en: ['project-model', 'project-instance'] },
-  { cn: ['建模', 'modeler', '路基', '堤坝', '围栏', '楼板', '河道', '水面', 'fence', 'floor', 'river', 'water'], en: ['modeler-embank', 'modeler-fence', 'modeler-floor', 'modeler-river', 'modeler-water', 'wim-modeler-river', 'wim-modeler-water'] },
-  { cn: ['自定义点位', 'custom poi'], en: ['custom-poi'] },
-  { cn: ['静态实例', 'static instance'], en: ['static-instance'] },
-  { cn: ['工程实例', 'project instance'], en: ['project-instance'] },
-  { cn: ['材质拾取', 'picker material'], en: ['picker-material'] },
-  { cn: ['坐标辅助', 'coord aide'], en: ['coord-aide'] },
-  { cn: ['节点选择', 'node selection'], en: ['node-selection'] },
-  { cn: ['地球瓦片', 'earth tiles'], en: ['earth-tiles'] },
-  { cn: ['节点管理', 'node'], en: ['node'] },
-  { cn: ['分组', 'group'], en: ['group'] },
-  { cn: ['项目', 'project'], en: ['project'] },
-  { cn: ['本地地理参考', 'local geo reference'], en: ['local-geo-reference'] },
-  { cn: ['自定义', 'customize'], en: ['customize'] },
-  { cn: ['bim层级', 'bim hierarchy'], en: ['hierarchy'] },
-  { cn: ['dcp保存', 'dcp save'], en: ['dcp-save'] },
-  { cn: ['wim控制器', 'wim controller'], en: ['wim-controller', 'wim-modeler-river-controller', 'wim-modeler-water-controller'] },
-  { cn: ['gis控制器', 'gis controller'], en: ['gis-controller'] },
-  { cn: ['相机启动', 'camera start'], en: ['camera-start'] },
-  { cn: ['相机漫游', 'camera roams'], en: ['camera-roams'] },
-  { cn: ['相机预设', 'camera preset'], en: ['camera-preset'] },
-  { cn: ['场景管理', '批量操作', '查询', '删除', '清除', '选择集', 'outliner'], en: ['scene', 'tiles', 'earth-tiles', 'node', 'group', 'project', 'node-selection'] },
-  { cn: ['坐标', '测量', '取点', '取线', '小地图', '指南针', '拾取'], en: ['coordinate', 'measure', 'picker', 'mini-map', 'compass', 'coord-aide', 'picker-material', 'picker-point', 'picker-polyline'] },
-  { cn: ['中国地图', 'china map'], en: ['china-map'] },
-  { cn: ['颜色', '色值', 'color'], en: ['color'] },
-  { cn: ['线性移动', '直线移动', 'move linear'], en: ['move-linear'] },
-  { cn: ['屏幕', '截图', 'screen'], en: ['screen'] },
-  { cn: ['形状', '图形', 'shape'], en: ['shape'] },
-  { cn: ['几何体', '材质', '点聚合', '资产加载', '地理参考', 'cluster', 'asset', 'geo'], en: ['geometry', 'material', 'cluster', 'asset-loader', 'geo-reference', 'local-geo-reference', 'daas'] },
-  { cn: ['系统', '调试', '事务', '插件', '设置', '编辑器'], en: ['system', 'debug', 'transaction', 'plugin', 'setting', 'editor', 'customize'] },
-  { cn: ['ui', '组件', '窗口组件', '点位组件', '视频组件'], en: ['window-ui', 'poi-ui', 'video-ui'] },
-  { cn: ['bim', 'dcp', '构件', '楼层', '房间', '模型树', 'bim高亮'], en: ['bimapi', 'hierarchy', 'dcp-save'] },
-  { cn: ['gis', '地理图层', '3dtiles', 'wmts', 'wms', 'wfs', '矢量', 'geolayer', 'gisvector', 'giscontroller'], en: ['gisapi', 'geolayer', '3dtiles', 'wmts', 'wms', 'wfs', 'gisvector', 'gis-controller'] },
-  { cn: ['wim', '洪水', '管道', '动态水面', 'cae', '点云', '色卡', 'flood', 'pipe', 'dam'], en: ['wimapi', 'flood', 'wim-pipe', 'wim-dynamic-water', 'dam-cae', 'point-cloud-sim', 'custom-color-card', 'wim-controller', 'wim-modeler-river-controller', 'wim-modeler-water-controller'] },
-  { cn: ['资源', 'assets', '特效资源', '模型资源'], en: ['effects-assets', 'model-assets'] },
-];
-
-/**
  * 全文模糊搜索 manifest 中所有 SKILL.md
- * 用户输入中文 → 映射表 → Skill 路径英文段匹配
+ * v1.1.0: 关键词→路径段映射已合并到 config/skill-route-mapping.json 的 pathSegments 字段。
+ * 此函数现在从 route 数据中获取 pathSegments 做匹配，不再依赖独立的 PATH_KEYWORD_MAP。
+ * 用户输入中文 → route.keywords 匹配 → route.pathSegments → manifest 路径段匹配
  * 用户输入英文 → 直接匹配路径段
- * 覆盖全部 102 个 SKILL.md，零配置
  */
 function searchFuzzySkills(requirement: string): string[] {
   const lower = requirement.toLowerCase();
   const results: Array<{ path: string; score: number }> = [];
+  const mapping = loadRouteMapping();
 
-  // 根据输入命中哪些中英关键词组
-  const matchedGroups = PATH_KEYWORD_MAP.filter(g =>
-    g.cn.some(w => lower.includes(w.toLowerCase())) || g.en.some(w => lower.includes(w.toLowerCase()))
-  );
-  const targetEn = new Set(matchedGroups.flatMap(g => g.en));
+  // 从 route 数据中收集所有 pathSegments（用于路径段命中加分）
+  const allPathSegments = new Set<string>();
+  // 从 route 数据中构建 cn→en 映射（中文关键词命中的 route，其 pathSegments 全部加权）
+  const keywordToSegments = new Map<string, Set<string>>();
+  for (const route of mapping.routes) {
+    const segs = route.pathSegments || [];
+    for (const s of segs) allPathSegments.add(s.toLowerCase());
+    for (const kw of route.keywords) {
+      const kwLower = kw.toLowerCase();
+      if (!keywordToSegments.has(kwLower)) keywordToSegments.set(kwLower, new Set());
+      for (const s of segs) keywordToSegments.get(kwLower)!.add(s.toLowerCase());
+    }
+  }
 
+  // 根据输入命中哪些 route 的关键词 → 收集加权 pathSegments
+  const bonusSegments = new Set<string>();
+  for (const route of mapping.routes) {
+    const hitKeyword = route.keywords.some(kw => lower.includes(kw.toLowerCase()));
+    const hitAlias = route.aliases.some(al => lower.includes(al.toLowerCase()));
+    if (hitKeyword || hitAlias) {
+      for (const seg of (route.pathSegments || [])) {
+        bonusSegments.add(seg.toLowerCase());
+      }
+    }
+  }
+
+  // 遍历 manifest 中所有 SKILL.md
   for (const [filePath] of manifestCache) {
     if (!filePath.startsWith('reference/') || !filePath.endsWith('SKILL.md')) continue;
     const pathLower = filePath.toLowerCase();
@@ -316,15 +280,14 @@ function searchFuzzySkills(requirement: string): string[] {
     for (const part of parts) {
       if (lower.includes(part)) score += 2;
     }
-    // 路径段命中映射表的目标英文
+    // 路径段命中 route 的 pathSegments（来自关键词命中加权）
     for (const part of parts) {
-      if (targetEn.has(part)) score += 3;
+      if (bonusSegments.has(part)) score += 3;
     }
 
     if (score > 0) results.push({ path: filePath, score });
   }
   results.sort((a, b) => b.score - a.score);
-  // Top 5 而非 3，确保不遗漏关联 Skill
   return results.slice(0, 5).map(r => r.path);
 }
 
@@ -341,6 +304,21 @@ function applyDisambiguation(requirement: string, keywordResults: { domain: stri
   return null;
 }
 
+/**
+ * ⚠️ TODO: 二层路由已知冲突
+ *
+ * 当前同时运行 3 套匹配引擎，结果可能矛盾：
+ *   A) 场景模板匹配 (matchScene → _index.json)  — 自称"最高优先级"
+ *   B) 关键词加权匹配 (matchKeywords → skill-route-mapping.json) — "兜底"
+ *   C) 全文模糊搜索 (searchFuzzySkills → 同样使用 skill-route-mapping.json 的 pathSegments) — "辅助"
+ *
+ * v1.1.0: C 已与 B 共享 pathSegments 数据源，消除关键词冗余。但 A 和 B 的 skillPath 仍可能不同。
+ *
+ * 场景命中时，B 和 C 的结果不再直接合并到 matched_skills (Round 2 优化)，
+ * 但 B 的 primaryRoute 仍用于生成 workflow_steps，A 和 B 的 Step 3 可能冲突。
+ *
+ * 长期方案：统一为单一匹配引擎，所有 Skill 路径从场景模板派生。
+ */
 async function buildWorkflowResponse(userRequirement: string, projectPath: string): Promise<any> {
   const mapping = loadRouteMapping();
 
@@ -403,11 +381,24 @@ async function buildWorkflowResponse(userRequirement: string, projectPath: strin
       builtinContentPreviews.push({ path: bs, preview: excerpt });
     }
   }
-  // 5.5 全文模糊搜索 manifest 中所有 SKILL.md（零配置覆盖率，不依赖路由映射）
-  const fuzzySkills = searchFuzzySkills(userRequirement);
-  for (const fs of fuzzySkills) {
-    if (!matchedSkills.includes(fs)) matchedSkills.push(fs);
+  // 5.5 全文模糊搜索（仅场景未命中时追加，避免与场景推荐冲突）
+  const suggestedSkills: string[] = [];
+  if (!scene) {
+    const fuzzySkills = searchFuzzySkills(userRequirement);
+    for (const fs of fuzzySkills) {
+      if (!matchedSkills.includes(fs)) matchedSkills.push(fs);
+    }
+  } else {
+    // 场景命中时，fuzzy search 结果作为参考建议，不直接合并到 matched_skills
+    const fuzzySkills = searchFuzzySkills(userRequirement);
+    for (const fs of fuzzySkills) {
+      if (!matchedSkills.includes(fs)) suggestedSkills.push(fs);
+    }
   }
+
+  // 6. matched_skills 去重（保留原始顺序）
+  const uniqueMatchedSkills = [...new Set(matchedSkills)];
+  const uniqueSuggestedSkills = [...new Set(suggestedSkills)];
 
   const isComplex = keywordResults.length > 3 || userRequirement.length > 50;
 
@@ -465,7 +456,8 @@ async function buildWorkflowResponse(userRequirement: string, projectPath: strin
   return {
     user_requirement: userRequirement,
     project_path: projectPath,
-    matched_skills: matchedSkills,
+    matched_skills: uniqueMatchedSkills,
+    suggested_skills: uniqueSuggestedSkills,
     required_related_skills: requiredRelatedSkills,
     workflow_steps: workflowSteps,
     primary_domain: primaryRoute?.domain || null,
@@ -809,7 +801,7 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
       let message: string;
       let nextStep: string;
       if (passed) {
-        message = '✅ 所有必需 Skill 已全文读取，可以开始编码。但请注意：编码完成后必须调用 trigger_self_evaluation 并传入 generated_code 做 API 白名单校验。跳过门禁2将无法发现 FocusByEntityName 这类幻觉 API。';
+        message = '✅ 文件完整性校验通过。⚠️ 门禁1仅验证文件是否已读取，不能保证不会编造幻觉 API。编码前仍需逐行对照 Skill 白名单。编码后务必调用 trigger_self_evaluation 做 API 白名单终检。';
         nextStep = '🔜 编码完成后，调用 trigger_self_evaluation，传入 generated_code（完整代码文本）和 used_skills（从 workflow_result.matched_skills 获取）。';
       } else {
         const issues: string[] = [];

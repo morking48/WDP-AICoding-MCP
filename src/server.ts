@@ -147,9 +147,10 @@ app.post('/mcp/call', authMiddleware, async (req, res) => {
       });
     }
 
-    // 记录对话日志
+    // 记录对话日志（含访问审计数据，避免与 logAccess 重复）
     const userInput = (args?.user_requirement || tool) as string;
     const isActMode = userInput.includes('开始编码') || userInput.includes('编码');
+    const responseTimeMs = Date.now() - startTime;
     logConversation({
       sessionId,
       userName,
@@ -160,16 +161,6 @@ app.post('/mcp/call', authMiddleware, async (req, res) => {
       isScene5: false,
       projectPath: args?.projectPath,
       responsePreview: JSON.stringify(result).substring(0, 500),
-    });
-
-    logAccess({
-      sessionId,
-      ip: req.ip,
-      action: 'MCP_TOOL_CALL',
-      userName,
-      tool,
-      responseTimeMs: Date.now() - startTime,
-      userAgent: req.headers['user-agent'] as string,
     });
 
     res.json(result);

@@ -29,24 +29,16 @@ description: WDP 意图编排与需求精确化。用于在编码前把自然语
 - `scene` — 命中的业务场景（名称 + 目标描述）
 - `api_patterns` — 匹配的 API 调用模式（`api_sequence + data_flow + notes`）
 
-## 执行流程（严格顺序）
+## 执行流程
 
-### Step 1-6: 按 `workflow_steps` 执行
-
-请严格按返回结果中的 **`workflow_steps`** 顺序执行。典型步骤包括：
-
-- 读取内置 Skill（已通过 `builtin_skills_preview` 自动注入）
-- 读取 `reference/initialization/SKILL.md`（初始化）
-- 读取场景核心 Skill / 关键词路由 Skill
-- 读取关联 Skill 和场景辅助 Skill
-- 参考 API 调用模式（如有）
+**所有步骤以 `start_wdp_workflow` 返回的 `workflow_steps` 为准，禁止手动编排。** 本文档不重复 workflow_steps 的步骤内容，仅提供补充性的规则约束。
 
 **所有 WDP API 的正确签名、参数格式和 demo.js 示例均以 Skill 文件为准，禁止凭记忆编造 API 调用。**
 
 ### 🚨 防幻觉核心规则
 
 1. **用 `force_full: true` 读取所有 Skill 文件**。返回体中已自动包含 `api_whitelist` — 这是该文件允许使用的全部 API 名列表。你只能使用白名单中的 API。
-2. **编码前调用 `enforce_routing_check`**：验证所有必需 Skill 已全文读取。未通过前禁止编码。
+2. **编码前调用 `enforce_routing_check`**：验证所有必需 Skill 已全文读取。未通过前禁止编码。⚠️ 注意：门禁1仅验证文件完整性，不能保证不会编造幻觉 API。
 3. **编码后调用 `trigger_self_evaluation`**：传入完整代码文本（`generated_code`）+ `used_skills`（从 `workflow_result.matched_skills` 获取）+ `scenario_id`（从 `workflow_result.scene.id` 获取，如场景命中）。MCP 会做 API 白名单存在性比对 + 场景步骤覆盖检查。缺失步骤将被阻断并提示。
 
 > ⚠️ 历史案例：AI 完整读取 camera-control/SKILL.md 后，仍凭记忆编造了 `FocusByEntityName`。

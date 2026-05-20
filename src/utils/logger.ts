@@ -346,8 +346,24 @@ function startProfileSaveTimer(): void {
 
 // ========== 会话管理 ==========
 
+// 会话缓存：按 "IP:userName" 复用会话 ID，而非每次新建
+const sessionIdCache = new Map<string, { id: string; lastActive: number }>();
+const SESSION_TTL_MS = 30 * 60 * 1000; // 30 分钟无活动则过期
+
 export function getOrCreateSessionId(clientIp: string, userName: string = 'anonymous'): string {
+  const cacheKey = `${clientIp}:${userName}`;
+  const cached = sessionIdCache.get(cacheKey);
+  const now = Date.now();
+
+  // 复用有效会话
+  if (cached && (now - cached.lastActive) < SESSION_TTL_MS) {
+    cached.lastActive = now;
+    return cached.id;
+  }
+
+  // 创建新会话
   const sessionId = uuidv4();
+  sessionIdCache.set(cacheKey, { id: sessionId, lastActive: now });
   sessionMap.set(sessionId, {
     startTime: new Date(),
     userName,
@@ -612,6 +628,7 @@ export function logConversation(data: {
   projectPath?: string;
   backendCalls?: any[];
   responsePreview?: string;
+  responseTimeMs?: number;
 }): void {
   const userName = data.userName || 'anonymous';
   const cacheInfo = data.projectPath ? extractCacheInfo(data.projectPath) : null;

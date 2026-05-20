@@ -13,6 +13,8 @@
  *   3. 远程新增了哪些 SKILL.md 尚未路由（🟡 警告）
  *   4. KEYWORD_WEIGHTS 覆盖率（🟡 警告）
  *   5. business-scenarios 中引用的 skill_sequence 路径是否存在（🟡 警告）
+ *   6. pathSegments 在 manifest 中的覆盖情况（🟡 警告，v1.1.0）
+ *   7. 歧义消解规则 domain 有效性（🟡 警告）
  */
 
 import * as fs from 'fs';
@@ -27,7 +29,7 @@ const SCENARIOS_DIR = path.join(CONFIG_DIR, 'business-scenarios');
 // ========== 类型 ==========
 interface ManifestFile { path: string; size: number; mtime: number; sha1: string; ext: string; }
 interface ManifestResponse { root: string; count: number; total_size: number; files: ManifestFile[]; }
-interface RouteConfig { domain: string; label: string; skillPath: string; keywords: string[]; aliases: string[]; relatedSkills: string[]; sceneId?: string; }
+interface RouteConfig { domain: string; label: string; skillPath: string; keywords: string[]; aliases: string[]; relatedSkills: string[]; sceneId?: string; pathSegments?: string[]; }
 interface RouteMapping { version: string; routes: RouteConfig[]; baseSkills: string[]; builtinSkills: string[]; }
 interface SceneFile { metadata: { scenario_id: string; version: string; }; primary_skills: string[]; secondary_skills: string[]; modules: Array<{ wdp_apis: string[] }>; }
 
@@ -41,9 +43,19 @@ interface CheckResult {
 // ========== 远程拉取 ==========
 async function fetchManifest(): Promise<ManifestResponse> {
   const url = `${SKILL_SERVER_URL}/manifest`;
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`拉取 manifest 失败: HTTP ${response.status}`);
-  return (await response.json()) as ManifestResponse;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 秒超时
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`拉取 manifest 失败: HTTP ${response.status}`);
+    const data = (await response.json()) as ManifestResponse;
+    return data;
+  } catch (e: any) {
+    if (e.name === 'AbortError') throw new Error(`连接超时 (15s): ${url}`);
+    throw e;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 // ========== 本地加载 ==========
@@ -87,6 +99,39 @@ function extractDisambiguationDomains(): Set<string> {
     for (const t of targets) domains.add(t[1]);
   }
   return domains;
+}
+
+/**
+ * v1.1.0: pathSegments 一致性检查
+ * 验证 skill-route-mapping.json 中每条 route 的 pathSegments
+ * 覆盖了 manifest 中对应目录下的所有 SKILL.md 文件。
+ */
+function checkPathSegmentsCoverage(routes: RouteConfig[], manifestFiles: Set<string>): CheckResult[] {
+  const results: CheckResult[] = [];
+  for (const route of routes) {
+    const segs = route.pathSegments || [];
+    if (segs.length === 0) {
+      results.push({
+        type: 'WARNING',
+        category: 'PATH_SEGMENTS',
+        message: `路由 [${route.domain}] 未配置 pathSegments，searchFuzzySkills 将无法匹配此域`,
+      });
+      continue;
+    }
+    // 检查每个 pathSegment 是否在 manifest 中有对应的 SKILL.md
+    for (const seg of segs) {
+      // pathSegment 可能对应 skillPath 路径段，检查路径段是否出现在任何 manifest 路径中
+      const found = [...manifestFiles].some(fp => fp.toLowerCase().includes(seg.toLowerCase()));
+      if (!found) {
+        results.push({
+          type: 'WARNING',
+          category: 'PATH_SEGMENTS',
+          message: `路由 [${route.domain}] 的 pathSegment "${seg}" 在 manifest 中无匹配文件`,
+        });
+      }
+    }
+  }
+  return results;
 }
 
 // ========== 核心检查 ==========
@@ -254,6 +299,20 @@ async function runSyncCheck(): Promise<{ results: CheckResult[]; stats: any }> {
     console.log(`  🟡 ${sceneSkillIssues} 个场景 Skill 引用无效`);
   } else {
     console.log('  🟢 所有场景 Skill 引用有效');
+  }
+
+  // ====================================================================
+  // 检查 6: pathSegments 在 manifest 中的覆盖情况
+  // ====================================================================
+  console.log('\n--- 检查 6: pathSegments 一致性 ---');
+  const pathSegResults = checkPathSegmentsCoverage(mapping.routes, manifestFiles);
+  for (const r of pathSegResults) {
+    warningCount++;
+    results.push(r);
+    console.log(`  🟡 ${r.message}`);
+  }
+  if (pathSegResults.length === 0) {
+    console.log('  🟢 所有路由 pathSegments 覆盖有效');
   }
 
   // ====================================================================
