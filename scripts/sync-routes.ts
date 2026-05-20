@@ -23,7 +23,6 @@ const SKILL_SERVER_URL = process.env.SKILL_SERVER_URL || 'http://wdpapi-skill.51
 const CONFIG_DIR = path.resolve(__dirname, '../config');
 const ROUTE_MAPPING_PATH = path.join(CONFIG_DIR, 'skill-route-mapping.json');
 const SCENARIOS_DIR = path.join(CONFIG_DIR, 'business-scenarios');
-const API_PATTERNS_PATH = path.join(CONFIG_DIR, 'api-patterns.json');
 
 // ========== 类型 ==========
 interface ManifestFile { path: string; size: number; mtime: number; sha1: string; ext: string; }
@@ -55,11 +54,6 @@ function stripBom(content: string): string {
 function loadRouteMapping(): RouteMapping {
   const raw = fs.readFileSync(ROUTE_MAPPING_PATH, 'utf-8');
   return JSON.parse(stripBom(raw)) as RouteMapping;
-}
-
-function loadApiPatterns(): any {
-  const raw = fs.readFileSync(API_PATTERNS_PATH, 'utf-8');
-  return JSON.parse(stripBom(raw));
 }
 
 function loadScenarios(): SceneFile[] {
@@ -132,7 +126,6 @@ async function runSyncCheck(): Promise<{ results: CheckResult[]; stats: any }> {
 
   const keywordWeights = extractKeywordWeights();
   const disambiguationDomains = extractDisambiguationDomains();
-  const apiPatterns = loadApiPatterns();
   const scenarios = loadScenarios();
 
   // ====================================================================
@@ -261,32 +254,6 @@ async function runSyncCheck(): Promise<{ results: CheckResult[]; stats: any }> {
     console.log(`  🟡 ${sceneSkillIssues} 个场景 Skill 引用无效`);
   } else {
     console.log('  🟢 所有场景 Skill 引用有效');
-  }
-
-  // ====================================================================
-  // 检查 6: api-patterns 中的 skill_sequence 引用
-  // ====================================================================
-  console.log('\n--- 检查 6: api-patterns skill_sequence 引用 ---');
-  let patternIssues = 0;
-  const patterns = apiPatterns.patterns || [];
-  for (const pattern of patterns) {
-    const seq = pattern.skill_sequence || [];
-    for (const sp of seq) {
-      if (!manifestSkillFiles.has(sp)) {
-        patternIssues++;
-        results.push({
-          type: 'WARNING',
-          category: 'PATTERN_SKILL',
-          message: `API 模式 [${pattern.id}] 引用的 Skill 不存在: ${sp}`,
-        });
-      }
-    }
-  }
-  if (patternIssues > 0) {
-    warningCount++;
-    console.log(`  🟡 ${patternIssues} 个 API 模式 Skill 引用无效`);
-  } else {
-    console.log('  🟢 所有 API 模式 Skill 引用有效');
   }
 
   // ====================================================================
