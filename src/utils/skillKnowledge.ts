@@ -234,6 +234,32 @@ function matchKeywords(requirement: string): { domain: string; score: number }[]
   return scores;
 }
 
+/**
+ * 全文模糊搜索 manifest 中所有 SKILL.md，按路径匹配用户输入
+ * 命中路径中任何目录/文件名的 Skill 即被自动加入 matchedSkills
+ * （不依赖 skill-route-mapping.json 预配置，实现零配置覆盖）
+ */
+function searchFuzzySkills(requirement: string): string[] {
+  const lower = requirement.toLowerCase();
+  const results: Array<{ path: string; score: number }> = [];
+  for (const [filePath] of manifestCache) {
+    if (!filePath.startsWith('reference/') || !filePath.endsWith('SKILL.md')) continue;
+    const parts = filePath.toLowerCase().replace(/[\/\-_]/g, ' ').split(/\s+/);
+    let score = 0;
+    for (const part of parts) {
+      if (lower.includes(part)) score += 2;
+      // 支持简单中英映射（如 effects→特效, model→模型, assets→资源）
+      if ((part === 'effects' || part === 'assets') && (lower.includes('特效') || lower.includes('资源'))) score += 1;
+      if ((part === 'model' || part === 'assets') && (lower.includes('模型') || lower.includes('资源'))) score += 1;
+      if (part.includes('animation') && lower.includes('动画')) score += 2;
+      if (part.includes('skeletal') && (lower.includes('骨骼') || lower.includes('动画'))) score += 2;
+    }
+    if (score > 0) results.push({ path: filePath, score });
+  }
+  results.sort((a, b) => b.score - a.score);
+  return results.slice(0, 3).map(r => r.path);
+}
+
 function applyDisambiguation(requirement: string, keywordResults: { domain: string; score: number }[]): string | null {
   for (const rule of DISAMBIGUATION_RULES) {
     if (rule.pattern.test(requirement)) {
@@ -309,6 +335,12 @@ async function buildWorkflowResponse(userRequirement: string, projectPath: strin
       builtinContentPreviews.push({ path: bs, preview: excerpt });
     }
   }
+  // 5.5 全文模糊搜索 manifest 中所有 SKILL.md（零配置覆盖率，不依赖路由映射）
+  const fuzzySkills = searchFuzzySkills(userRequirement);
+  for (const fs of fuzzySkills) {
+    if (!matchedSkills.includes(fs)) matchedSkills.push(fs);
+  }
+
   const isComplex = keywordResults.length > 3 || userRequirement.length > 50;
 
   // 6. API 模式匹配
