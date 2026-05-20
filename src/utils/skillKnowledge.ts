@@ -1,4 +1,4 @@
-/**
+ /**
  * Skill 知识引擎（完整版）
  *
  * 功能：
@@ -154,15 +154,6 @@ function loadRouteMapping(): RouteMapping {
   }
 }
 
-let apiPatternsCache: any[] | null = null;
-function loadApiPatterns(): any[] {
-  if (!apiPatternsCache) {
-    const p = path.resolve(__dirname, '../../config/api-patterns.json');
-    apiPatternsCache = fs.existsSync(p) ? ((JSON.parse(stripBom(fs.readFileSync(p, 'utf-8'))) as any).patterns || []) : [];
-  }
-  return apiPatternsCache || [];
-}
-
 interface SceneEntry { id: string; name: string; priority: number; goal: string; keywords: string[]; synonyms: string[]; primary_skills: string[]; secondary_skills: string[]; file: string | null; }
 interface SceneIndex { scenarios: SceneEntry[]; }
 interface SceneDetail {
@@ -235,29 +226,87 @@ function matchKeywords(requirement: string): { domain: string; score: number }[]
 }
 
 /**
- * 全文模糊搜索 manifest 中所有 SKILL.md，按路径匹配用户输入
- * 命中路径中任何目录/文件名的 Skill 即被自动加入 matchedSkills
- * （不依赖 skill-route-mapping.json 预配置，实现零配置覆盖）
+ * 中英关键词 → Skill 路径段 双向映射表
+ * 覆盖所有 WDP 域：初始化 / 相机 / 覆盖物 / 模型 / 工具 / 环境 / 场景 / 系统 / 插件 / 数据模型 / 组件
+ */
+const PATH_KEYWORD_MAP: Array<{ cn: string[]; en: string[] }> = [
+  { cn: ['初始化', '接入', '启动'], en: ['initialization', 'init'] },
+  { cn: ['渲染', '渲染器', 'renderer'], en: ['renderer'] },
+  { cn: ['相机', '飞行', '漫游', '聚焦', '跟随', '镜头', '视角'], en: ['camera', 'camera-control', 'flyto', 'roams', 'preset'] },
+  { cn: ['环境', '天空', '天气', '光照', '雾', '后期'], en: ['environment'] },
+  { cn: ['poi', '点位', '标注', '图标'], en: ['poi', 'custom-poi'] },
+  { cn: ['路径', '画线', '绘制路径'], en: ['path'] },
+  { cn: ['浮窗', '弹窗', '窗口', 'window'], en: ['window'] },
+  { cn: ['区域', '轮廓', '范围', 'range'], en: ['range'] },
+  { cn: ['3d文字', '文字', '文本', '标签', 'text3d'], en: ['text3d'] },
+  { cn: ['灯光', 'light'], en: ['light'] },
+  { cn: ['粒子', 'particle'], en: ['particle'] },
+  { cn: ['高亮区域', 'highlight'], en: ['highlight-area'] },
+  { cn: ['热力图', 'heatmap', '柱状热力', '空间热力', '道路热力'], en: ['heatmap', 'columnar-heatmap', 'mesh-heatmap', 'road-heatmap', 'space-heatmap'] },
+  { cn: ['可视域', '通视', 'viewshed'], en: ['viewshed'] },
+  { cn: ['抛物线', '弧线', 'parabola'], en: ['parabola'] },
+  { cn: ['栅格', 'raster', '图片'], en: ['raster'] },
+  { cn: ['实时视频', '视频融合', '监控'], en: ['real-time-video'] },
+  { cn: ['沿路径移动', '路径移动', 'bound'], en: ['bound'] },
+  { cn: ['特效', 'effects', '场景特效'], en: ['effects', 'scene-effects'] },
+  { cn: ['剖切', '截面', 'section'], en: ['section'] },
+  { cn: ['静态模型', '模型放置', 'static'], en: ['static', 'static-model'] },
+  { cn: ['骨骼动画', '骨骼', 'skeletal', '动画模型'], en: ['skeletal'] },
+  { cn: ['植被', '树', '草', 'vegetation'], en: ['vegetation'] },
+  { cn: ['工程模型', '工程摆放', 'project model'], en: ['project-model', 'project-instance'] },
+  { cn: ['建模', 'modeler', '路基', '堤坝', '围栏', '楼板', '河道', '水面', 'fence', 'floor', 'river', 'water'], en: ['modeler-embank', 'modeler-fence', 'modeler-floor', 'modeler-river', 'modeler-water', 'wim-modeler-river', 'wim-modeler-water'] },
+  { cn: ['场景管理', '批量操作', '查询', '删除', '清除', '选择集', 'outliner'], en: ['scene', 'tiles', 'earth-tiles', 'node', 'group', 'project', 'node-selection'] },
+  { cn: ['坐标', '测量', '取点', '取线', '小地图', '指南针', '拾取'], en: ['coordinate', 'measure', 'picker', 'mini-map', 'compass', 'coord-aide', 'picker-material', 'picker-point', 'picker-polyline'] },
+  { cn: ['中国地图', 'china map'], en: ['china-map'] },
+  { cn: ['颜色', '色值', 'color'], en: ['color'] },
+  { cn: ['线性移动', '直线移动', 'move linear'], en: ['move-linear'] },
+  { cn: ['屏幕', '截图', 'screen'], en: ['screen'] },
+  { cn: ['形状', '图形', 'shape'], en: ['shape'] },
+  { cn: ['几何体', '材质', '点聚合', '资产加载', '地理参考', 'cluster', 'asset', 'geo'], en: ['geometry', 'material', 'cluster', 'asset-loader', 'geo-reference', 'local-geo-reference', 'daas'] },
+  { cn: ['系统', '调试', '事务', '插件', '设置', '编辑器'], en: ['system', 'debug', 'transaction', 'plugin', 'setting', 'editor', 'customize'] },
+  { cn: ['ui', '组件', '窗口组件', '点位组件', '视频组件'], en: ['window-ui', 'poi-ui', 'video-ui'] },
+  { cn: ['bim', 'dcp', '构件', '楼层', '房间', '模型树', 'bim高亮'], en: ['bimapi', 'hierarchy', 'dcp-save'] },
+  { cn: ['gis', '地理图层', '3dtiles', 'wmts', 'wms', 'wfs', '矢量', 'geolayer', 'gisvector', 'giscontroller'], en: ['gisapi', 'geolayer', '3dtiles', 'wmts', 'wms', 'wfs', 'gisvector', 'gis-controller'] },
+  { cn: ['wim', '洪水', '管道', '动态水面', 'cae', '点云', '色卡', 'flood', 'pipe', 'dam'], en: ['wimapi', 'flood', 'wim-pipe', 'wim-dynamic-water', 'dam-cae', 'point-cloud-sim', 'custom-color-card', 'wim-controller', 'wim-modeler-river-controller', 'wim-modeler-water-controller'] },
+  { cn: ['资源', 'assets', '特效资源', '模型资源'], en: ['effects-assets', 'model-assets'] },
+];
+
+/**
+ * 全文模糊搜索 manifest 中所有 SKILL.md
+ * 用户输入中文 → 映射表 → Skill 路径英文段匹配
+ * 用户输入英文 → 直接匹配路径段
+ * 覆盖全部 102 个 SKILL.md，零配置
  */
 function searchFuzzySkills(requirement: string): string[] {
   const lower = requirement.toLowerCase();
   const results: Array<{ path: string; score: number }> = [];
+
+  // 根据输入命中哪些中英关键词组
+  const matchedGroups = PATH_KEYWORD_MAP.filter(g =>
+    g.cn.some(w => lower.includes(w.toLowerCase())) || g.en.some(w => lower.includes(w.toLowerCase()))
+  );
+  const targetEn = new Set(matchedGroups.flatMap(g => g.en));
+
   for (const [filePath] of manifestCache) {
     if (!filePath.startsWith('reference/') || !filePath.endsWith('SKILL.md')) continue;
-    const parts = filePath.toLowerCase().replace(/[\/\-_]/g, ' ').split(/\s+/);
+    const pathLower = filePath.toLowerCase();
+    const parts = pathLower.replace(/[\/\-_]/g, ' ').split(/\s+/);
     let score = 0;
+
+    // 路径段直接命中用户输入英文单词
     for (const part of parts) {
       if (lower.includes(part)) score += 2;
-      // 支持简单中英映射（如 effects→特效, model→模型, assets→资源）
-      if ((part === 'effects' || part === 'assets') && (lower.includes('特效') || lower.includes('资源'))) score += 1;
-      if ((part === 'model' || part === 'assets') && (lower.includes('模型') || lower.includes('资源'))) score += 1;
-      if (part.includes('animation') && lower.includes('动画')) score += 2;
-      if (part.includes('skeletal') && (lower.includes('骨骼') || lower.includes('动画'))) score += 2;
     }
+    // 路径段命中映射表的目标英文
+    for (const part of parts) {
+      if (targetEn.has(part)) score += 3;
+    }
+
     if (score > 0) results.push({ path: filePath, score });
   }
   results.sort((a, b) => b.score - a.score);
-  return results.slice(0, 3).map(r => r.path);
+  // Top 5 而非 3，确保不遗漏关联 Skill
+  return results.slice(0, 5).map(r => r.path);
 }
 
 function applyDisambiguation(requirement: string, keywordResults: { domain: string; score: number }[]): string | null {
@@ -343,16 +392,7 @@ async function buildWorkflowResponse(userRequirement: string, projectPath: strin
 
   const isComplex = keywordResults.length > 3 || userRequirement.length > 50;
 
-  // 6. API 模式匹配
-  const patterns = loadApiPatterns();
-  let matchedPatterns: any[] = [];
-  if (patterns.length > 0) {
-    matchedPatterns = patterns.filter((p: any) =>
-      p.skill_sequence && p.skill_sequence.some((sp: string) => matchedSkills.includes(sp)));
-    matchedPatterns = matchedPatterns.slice(0, 2);
-  }
-
-  // 7. 构建工作流步骤
+  // 6. 构建工作流步骤
   const workflowSteps: string[] = [];
   if (scene) workflowSteps.push(`🎯 场景: ${scene.name} — ${scene.goal}`);
   workflowSteps.push('Step 1: 意图编排 → 读取 builtin/wdp-intent-orchestrator.md');
@@ -361,8 +401,6 @@ async function buildWorkflowResponse(userRequirement: string, projectPath: strin
   if (scene) workflowSteps.push(`Step 3: 场景核心 Skill → 读取 ${scene.primary_skills.join(', ')}`);
   if (requiredRelatedSkills.length > 0) workflowSteps.push(`Step 4: 关联 Skill → 读取 ${requiredRelatedSkills.join(', ')}`);
   if (scene && scene.secondary_skills.length > 0) workflowSteps.push(`Step 5: 场景辅助 Skill → 读取 ${scene.secondary_skills.join(', ')}`);
-  if (matchedPatterns.length > 0) workflowSteps.push(`Step 6: API 调用模式 → ${matchedPatterns.map((p: any) => p.name).join(', ')}`);
-
   // 8. 构建 guidance（注入后果前置 + API 白名单提示）
   const sceneGuidance = scene
     ? `🎯 当前场景：${scene.name} — ${scene.goal}\n`
@@ -422,7 +460,6 @@ async function buildWorkflowResponse(userRequirement: string, projectPath: strin
       api_flow: sceneDetail.api_flow,
       modules: sceneDetail.modules?.map(m => ({ name: m.name, wdp_apis: m.wdp_apis, purpose: m.purpose })),
     } : null,
-    api_patterns: matchedPatterns,
     builtin_skills_preview: builtinContentPreviews,
     skill_api_summaries: skillApiSummaries,
     guidance: sceneGuidance + consequenceBlock,
