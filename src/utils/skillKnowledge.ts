@@ -208,6 +208,18 @@ function matchScene(input: string): SceneEntry | null {
   return bestScore > 0 ? bestMatch : null;
 }
 
+// v1.3: 资产搜索脚本推荐 — primaryRoute 命中模型/特效类 domain 时，
+// 将搜索脚本注入 matched_skills，配合 enforce_routing_check 硬阻断确保 AI 先读取
+const ASSET_SEARCH_SCRIPTS: Record<string, { script: string; label: string; typeHint: string }> = {
+  'model-static':      { script: 'reference/model-assets/scripts/search_assets.py',   label: '静态模型资产搜索', typeHint: '--type static' },
+  'model-skeletal':    { script: 'reference/model-assets/scripts/search_assets.py',   label: '骨骼动画资产搜索', typeHint: '--type skeletal' },
+  'model-vegetation':  { script: 'reference/model-assets/scripts/search_assets.py',   label: '植被资产搜索',     typeHint: '--type static' },
+  'model-project':     { script: 'reference/model-assets/scripts/search_assets.py',   label: '工程模型资产搜索', typeHint: '' },
+  'covering-particle': { script: 'reference/effects-assets/scripts/search_effects.py', label: '粒子特效资产搜索', typeHint: '' },
+  'covering-light':    { script: 'reference/effects-assets/scripts/search_effects.py', label: '灯光特效资产搜索', typeHint: '' },
+  'scene-effects':     { script: 'reference/effects-assets/scripts/search_effects.py', label: '场景特效资产搜索', typeHint: '' },
+};
+
 function matchKeywords(requirement: string): { domain: string; score: number }[] {
   const lower = requirement.toLowerCase();
   const mapping = loadRouteMapping();
@@ -365,6 +377,12 @@ async function buildWorkflowResponse(userRequirement: string, projectPath: strin
     }
   }
 
+  // 3.5 v1.3: 资产搜索脚本注入 — 排在第一位，配合 enforce_routing_check 硬阻断确保 AI 先读取
+  const assetHint = primaryRoute ? ASSET_SEARCH_SCRIPTS[primaryRoute.domain] : null;
+  if (assetHint && !matchedSkills.includes(assetHint.script)) {
+    matchedSkills.unshift(assetHint.script);
+  }
+
   // 4. 添加 baseSkills
   for (const bs of mapping.baseSkills) {
     if (!matchedSkills.includes(bs)) matchedSkills.push(bs);
@@ -411,6 +429,8 @@ async function buildWorkflowResponse(userRequirement: string, projectPath: strin
   if (scene) workflowSteps.push(`Step 3: 场景核心 Skill → 读取 ${scene.primary_skills.join(', ')}`);
   if (requiredRelatedSkills.length > 0) workflowSteps.push(`Step 4: 关联 Skill → 读取 ${requiredRelatedSkills.join(', ')}`);
   if (scene && scene.secondary_skills.length > 0) workflowSteps.push(`Step 5: 场景辅助 Skill → 读取 ${scene.secondary_skills.join(', ')}`);
+  // v1.3: 资产搜索步骤
+  if (assetHint) workflowSteps.push(`🔍 ${assetHint.label} → 读取 ${assetHint.script} 获取 seedId`);
   // 8. 构建 guidance（注入后果前置 + API 白名单提示）
   const sceneGuidance = scene
     ? `🎯 当前场景：${scene.name} — ${scene.goal}\n`
@@ -473,7 +493,9 @@ async function buildWorkflowResponse(userRequirement: string, projectPath: strin
     } : null,
     builtin_skills_preview: builtinContentPreviews,
     skill_api_summaries: skillApiSummaries,
-    guidance: sceneGuidance + consequenceBlock,
+    guidance: sceneGuidance + consequenceBlock + (assetHint
+      ? `\n📦 资产搜索：读取 ${assetHint.script}，用自然语言搜索 seedId。用法：python3 search_*.py "<描述>" --random ${assetHint.typeHint}\n`
+      : ''),
   };
 }
 
