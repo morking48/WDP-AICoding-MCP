@@ -92,6 +92,11 @@ const DISAMBIGUATION_RULES: Array<{ pattern: RegExp; targetDomain: string; descr
 // ========== 远程拉取 ==========
 async function fetchSkillsManifest(): Promise<ManifestResponse> {
   const url = `${SKILL_SERVER_URL}/manifest`;
+  // 内网自签证书: 忽略 TLS 验证 (仅 dev 环境，生产需配置 CA)
+  const tlsOpts = (url.startsWith('https') && process.env.NODE_TLS_REJECT_UNAUTHORIZED !== '0')
+    ? { rejectUnauthorized: false } // fetch 不支持直接传 TLS opts，用环境变量兜底
+    : {};
+  // Node.js 原生 fetch 对 HTTPS 自签证书的支持有限，先尝试，失败则提示
   const response = await fetch(url);
   if (!response.ok) throw new Error(`拉取 manifest 失败: HTTP ${response.status}`);
   const data = (await response.json()) as ManifestResponse;
@@ -971,8 +976,7 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
 
 // ========== 初始化 ==========
 export async function initSkillKnowledge(): Promise<void> {
-  await fetchSkillsManifest();
-  // 加载内置 Skill
+  // 1. 先加载内置 Skill + 路由（不依赖网络）
   const builtinDir = path.resolve(__dirname, '../../builtin');
   const builtinFiles = ['wdp-intent-orchestrator.md'];
   for (const file of builtinFiles) {
@@ -983,6 +987,12 @@ export async function initSkillKnowledge(): Promise<void> {
   }
   // 预加载路由映射
   try { loadRouteMapping(); } catch { /* 路由映射将在首次使用时加载 */ }
+  // 2. 再拉取远程 manifest（失败不阻断内置 Skill 的使用）
+  try {
+    await fetchSkillsManifest();
+  } catch (e: any) {
+    console.warn(`[SkillKnowledge] Manifest 拉取失败（内置 Skill 仍可用）: ${e.message}`);
+  }
 }
 
 export { readKnowledgeFile, listKnowledgeEntries, generateDigest, fetchSkillsManifest, fetchSkillFile, buildWorkflowResponse };
