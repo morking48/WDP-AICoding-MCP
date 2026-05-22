@@ -148,10 +148,10 @@ function stripBom(content: string): string {
 
 function loadRouteMapping(): RouteMapping {
   if (routeMapping) return routeMapping;
-  // 兼容 dev (ts-node: src/utils → ../../config) 和 prod (node dist/utils → ../config)
+  // 兼容 dev (ts-node: src/utils → ../config) 和 prod (node dist/utils → ../../config)
   const candidates = [
-    path.resolve(__dirname, '../../config/skill-route-mapping.json'),
     path.resolve(__dirname, '../config/skill-route-mapping.json'),
+    path.resolve(__dirname, '../../config/skill-route-mapping.json'),
   ];
   for (const configPath of candidates) {
     try {
@@ -187,8 +187,8 @@ let sceneDetailCache: Map<string, SceneDetail> = new Map();
 function loadSceneIndex(): SceneIndex | null {
   if (sceneIndex) return sceneIndex;
   const candidates = [
-    path.resolve(__dirname, '../../config/business-scenarios/_index.json'),
     path.resolve(__dirname, '../config/business-scenarios/_index.json'),
+    path.resolve(__dirname, '../../config/business-scenarios/_index.json'),
   ];
   for (const p of candidates) {
     if (!fs.existsSync(p)) continue;
@@ -201,8 +201,8 @@ function loadSceneIndex(): SceneIndex | null {
 function loadSceneDetail(sceneId: string): SceneDetail | null {
   if (sceneDetailCache.has(sceneId)) return sceneDetailCache.get(sceneId)!;
   const candidates = [
-    path.resolve(__dirname, `../../config/business-scenarios/${sceneId}.json`),
     path.resolve(__dirname, `../config/business-scenarios/${sceneId}.json`),
+    path.resolve(__dirname, `../../config/business-scenarios/${sceneId}.json`),
   ];
   for (const p of candidates) {
     if (!fs.existsSync(p)) continue;
@@ -1000,7 +1000,7 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
 // ========== 初始化 ==========
 export async function initSkillKnowledge(): Promise<void> {
   // 1. 先加载内置 Skill + 路由（不依赖网络）
-  const builtinDir = path.resolve(__dirname, '../builtin');
+  const builtinDir = path.resolve(__dirname, '../../builtin');
   const builtinFiles = ['wdp-intent-orchestrator.md'];
   for (const file of builtinFiles) {
     const key = `builtin/${file}`;
