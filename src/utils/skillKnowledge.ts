@@ -148,7 +148,7 @@ function stripBom(content: string): string {
 
 function loadRouteMapping(): RouteMapping {
   if (routeMapping) return routeMapping;
-  const configPath = path.resolve(__dirname, '../../config/skill-route-mapping.json');
+  const configPath = path.resolve(__dirname, '../config/skill-route-mapping.json');
   try {
     const raw = fs.readFileSync(configPath, 'utf-8');
     const data = JSON.parse(stripBom(raw)) as RouteMapping;
@@ -177,14 +177,14 @@ let sceneIndex: SceneIndex | null = null;
 let sceneDetailCache: Map<string, SceneDetail> = new Map();
 function loadSceneIndex(): SceneIndex | null {
   if (sceneIndex) return sceneIndex;
-  const p = path.resolve(__dirname, '../../config/business-scenarios/_index.json');
+  const p = path.resolve(__dirname, '../config/business-scenarios/_index.json');
   if (!fs.existsSync(p)) return null;
   sceneIndex = JSON.parse(stripBom(fs.readFileSync(p, 'utf-8'))) as SceneIndex;
   return sceneIndex;
 }
 function loadSceneDetail(sceneId: string): SceneDetail | null {
   if (sceneDetailCache.has(sceneId)) return sceneDetailCache.get(sceneId)!;
-  const p = path.resolve(__dirname, `../../config/business-scenarios/${sceneId}.json`);
+  const p = path.resolve(__dirname, `../config/business-scenarios/${sceneId}.json`);
   if (!fs.existsSync(p)) return null;
   const detail = JSON.parse(stripBom(fs.readFileSync(p, 'utf-8'))) as SceneDetail;
   sceneDetailCache.set(sceneId, detail);
@@ -978,7 +978,7 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
 // ========== 初始化 ==========
 export async function initSkillKnowledge(): Promise<void> {
   // 1. 先加载内置 Skill + 路由（不依赖网络）
-  const builtinDir = path.resolve(__dirname, '../../builtin');
+  const builtinDir = path.resolve(__dirname, '../builtin');
   const builtinFiles = ['wdp-intent-orchestrator.md'];
   for (const file of builtinFiles) {
     const key = `builtin/${file}`;
