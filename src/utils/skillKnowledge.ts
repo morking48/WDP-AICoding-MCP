@@ -148,18 +148,27 @@ function stripBom(content: string): string {
 
 function loadRouteMapping(): RouteMapping {
   if (routeMapping) return routeMapping;
-  const configPath = path.resolve(__dirname, '../config/skill-route-mapping.json');
-  try {
-    const raw = fs.readFileSync(configPath, 'utf-8');
-    const data = JSON.parse(stripBom(raw)) as RouteMapping;
-    routeMapping = data;
-    return data;
-  } catch (error: any) {
-    console.error(`[SkillKnowledge] 路由映射加载失败: ${error.message}`);
-    // 返回空路由，服务降级运行
-    routeMapping = { version: '0.0.0', routes: [], baseSkills: [], builtinSkills: [] };
-    return routeMapping;
+  // 兼容 dev (ts-node: src/utils → ../../config) 和 prod (node dist/utils → ../config)
+  const candidates = [
+    path.resolve(__dirname, '../../config/skill-route-mapping.json'),
+    path.resolve(__dirname, '../config/skill-route-mapping.json'),
+  ];
+  for (const configPath of candidates) {
+    try {
+      if (!fs.existsSync(configPath)) continue;
+      const raw = fs.readFileSync(configPath, 'utf-8');
+      const data = JSON.parse(stripBom(raw)) as RouteMapping;
+      routeMapping = data;
+      console.log(`[SkillKnowledge] 路由映射加载成功 (${configPath}): ${data.routes.length} 条路由`);
+      return data;
+    } catch (error: any) {
+      // 继续尝试下一个
+    }
   }
+  console.error(`[SkillKnowledge] 路由映射加载失败: 尝试了 ${candidates.join(', ')} 均未找到`);
+  // 返回空路由，服务降级运行
+  routeMapping = { version: '0.0.0', routes: [], baseSkills: [], builtinSkills: [] };
+  return routeMapping;
 }
 
 interface SceneEntry { id: string; name: string; priority: number; goal: string; keywords: string[]; synonyms: string[]; primary_skills: string[]; secondary_skills: string[]; file: string | null; }
