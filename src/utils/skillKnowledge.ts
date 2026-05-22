@@ -186,18 +186,31 @@ let sceneIndex: SceneIndex | null = null;
 let sceneDetailCache: Map<string, SceneDetail> = new Map();
 function loadSceneIndex(): SceneIndex | null {
   if (sceneIndex) return sceneIndex;
-  const p = path.resolve(__dirname, '../config/business-scenarios/_index.json');
-  if (!fs.existsSync(p)) return null;
-  sceneIndex = JSON.parse(stripBom(fs.readFileSync(p, 'utf-8'))) as SceneIndex;
-  return sceneIndex;
+  const candidates = [
+    path.resolve(__dirname, '../../config/business-scenarios/_index.json'),
+    path.resolve(__dirname, '../config/business-scenarios/_index.json'),
+  ];
+  for (const p of candidates) {
+    if (!fs.existsSync(p)) continue;
+    sceneIndex = JSON.parse(stripBom(fs.readFileSync(p, 'utf-8'))) as SceneIndex;
+    console.log(`[SkillKnowledge] 场景索引加载成功 (${p}): ${sceneIndex.scenarios.length} 个场景`);
+    return sceneIndex;
+  }
+  return null;
 }
 function loadSceneDetail(sceneId: string): SceneDetail | null {
   if (sceneDetailCache.has(sceneId)) return sceneDetailCache.get(sceneId)!;
-  const p = path.resolve(__dirname, `../config/business-scenarios/${sceneId}.json`);
-  if (!fs.existsSync(p)) return null;
-  const detail = JSON.parse(stripBom(fs.readFileSync(p, 'utf-8'))) as SceneDetail;
-  sceneDetailCache.set(sceneId, detail);
-  return detail;
+  const candidates = [
+    path.resolve(__dirname, `../../config/business-scenarios/${sceneId}.json`),
+    path.resolve(__dirname, `../config/business-scenarios/${sceneId}.json`),
+  ];
+  for (const p of candidates) {
+    if (!fs.existsSync(p)) continue;
+    const detail = JSON.parse(stripBom(fs.readFileSync(p, 'utf-8'))) as SceneDetail;
+    sceneDetailCache.set(sceneId, detail);
+    return detail;
+  }
+  return null;
 }
 
 function matchScene(input: string): SceneEntry | null {
