@@ -11,6 +11,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import https from 'https';
 
 // ========== 配置 ==========
 const SKILL_SERVER_URL = process.env.SKILL_SERVER_URL || 'https://wdpapi-skill.51aes.com';
@@ -92,12 +93,9 @@ const DISAMBIGUATION_RULES: Array<{ pattern: RegExp; targetDomain: string; descr
 // ========== 远程拉取 ==========
 async function fetchSkillsManifest(): Promise<ManifestResponse> {
   const url = `${SKILL_SERVER_URL}/manifest`;
-  // 内网自签证书: 忽略 TLS 验证 (仅 dev 环境，生产需配置 CA)
-  const tlsOpts = (url.startsWith('https') && process.env.NODE_TLS_REJECT_UNAUTHORIZED !== '0')
-    ? { rejectUnauthorized: false } // fetch 不支持直接传 TLS opts，用环境变量兜底
-    : {};
-  // Node.js 原生 fetch 对 HTTPS 自签证书的支持有限，先尝试，失败则提示
-  const response = await fetch(url);
+  // 内网自签证书: 使用 Agent 忽略 TLS 验证
+  const agent = url.startsWith('https') ? new https.Agent({ rejectUnauthorized: false }) : undefined;
+  const response = await fetch(url, { agent } as any);
   if (!response.ok) throw new Error(`拉取 manifest 失败: HTTP ${response.status}`);
   const data = (await response.json()) as ManifestResponse;
   manifestCache.clear();
