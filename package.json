@@ -5,7 +5,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "ts-node src/server.ts",
-    "build": "tsc && npx cpx \"config/**/*\" dist/config && npx cpx \"builtin/**/*\" dist/builtin",
+    "build": "tsc && node scripts/copy-static.js",
     "start": "node dist/server.js",
     "sync-routes": "ts-node --transpile-only scripts/sync-routes.ts",
     "sync-check": "ts-node --transpile-only scripts/sync-routes.ts --ci",
