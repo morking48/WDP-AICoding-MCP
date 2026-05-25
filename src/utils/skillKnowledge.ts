@@ -94,11 +94,31 @@ const DISAMBIGUATION_RULES: Array<{ pattern: RegExp; targetDomain: string; descr
 ];
 
 // ========== 远程拉取 ==========
+// Node.js v18+ 原生 fetch 使用 undici，需用 dispatcher 而非 https.Agent
+let fetchDispatcher: any = undefined;
+function getFetchDispatcher(): any {
+  if (fetchDispatcher === undefined) {
+    try {
+      // 尝试使用 undici 的 Agent（Node v18+ 内置）
+      const { Agent } = require('undici');
+      fetchDispatcher = new Agent({
+        connect: { rejectUnauthorized: false },
+        // 关键：TLS 选项通过 connect 传递
+      });
+    } catch {
+      // 回退：尝试 https.Agent（旧版 Node 或 polyfill）
+      fetchDispatcher = new https.Agent({ rejectUnauthorized: false });
+    }
+  }
+  return fetchDispatcher;
+}
+
 async function fetchSkillsManifest(): Promise<ManifestResponse> {
   const url = `${SKILL_SERVER_URL}/manifest`;
-  // 内网自签证书: 使用 Agent 忽略 TLS 验证
-  const agent = url.startsWith('https') ? new https.Agent({ rejectUnauthorized: false }) : undefined;
-  const response = await fetch(url, { agent } as any);
+  // 内网自签证书: 通过 undici dispatcher 或 https.Agent 忽略 TLS 验证
+  const dispatcher = getFetchDispatcher();
+  // undici 使用 dispatcher，node-fetch polyfill 使用 agent，两者都传确保兼容
+  const response = await fetch(url, { dispatcher, agent: dispatcher } as any);
   if (!response.ok) throw new Error(`拉取 manifest 失败: HTTP ${response.status}`);
   const data = (await response.json()) as ManifestResponse;
   manifestCache.clear();
@@ -109,7 +129,9 @@ async function fetchSkillsManifest(): Promise<ManifestResponse> {
 
 async function fetchSkillFile(filePath: string): Promise<string> {
   const url = `${SKILL_SERVER_URL}/file/${encodeURIComponent(filePath)}`;
-  const response = await fetch(url);
+  // 内网自签证书: 同样忽略 TLS 验证
+  const dispatcher = getFetchDispatcher();
+  const response = await fetch(url, { dispatcher, agent: dispatcher } as any);
   if (!response.ok) throw new Error(`拉取文件失败: HTTP ${response.status} - ${filePath}`);
   const content = await response.text();
   fileCache.set(filePath, { content, timestamp: Date.now() });
