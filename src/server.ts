@@ -248,7 +248,7 @@ async function start() {
     console.warn('[Server] Skill 知识库初始化失败（服务仍可启动）:', error.message);
   }
 
-  const SKILL_SERVER_URL = process.env.SKILL_SERVER_URL || 'https://wdpapi-skill.51aes.com';
+  const SKILL_SERVER_URL = process.env.SKILL_SERVER_URL || 'http://wdpapi-skill.51aes.com';
 
   app.listen(Number(PORT), HOST, () => {
     console.log(`\n🚀 WDP MCP API Server 已启动`);
