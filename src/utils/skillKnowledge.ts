@@ -105,9 +105,11 @@ function getFetchDispatcher(): any {
         connect: { rejectUnauthorized: false },
         // 关键：TLS 选项通过 connect 传递
       });
-    } catch {
+      console.log(`[SkillKnowledge] ✅ 使用 undici.Agent (Node ${process.version})，TLS 自签证书绕过已启用`);
+    } catch (err: any) {
       // 回退：尝试 https.Agent（旧版 Node 或 polyfill）
       fetchDispatcher = new https.Agent({ rejectUnauthorized: false });
+      console.log(`[SkillKnowledge] ⚠️ undici 不可用(${err.message})，回退到 https.Agent (Node ${process.version})`);
     }
   }
   return fetchDispatcher;
@@ -115,33 +117,95 @@ function getFetchDispatcher(): any {
 
 async function fetchSkillsManifest(): Promise<ManifestResponse> {
   const url = `${SKILL_SERVER_URL}/manifest`;
-  // 内网自签证书: 通过 undici dispatcher 或 https.Agent 忽略 TLS 验证
   const dispatcher = getFetchDispatcher();
-  // undici 使用 dispatcher，node-fetch polyfill 使用 agent，两者都传确保兼容
-  const response = await fetch(url, { dispatcher, agent: dispatcher } as any);
-  if (!response.ok) throw new Error(`拉取 manifest 失败: HTTP ${response.status}`);
-  const data = (await response.json()) as ManifestResponse;
+  const dispatcherType = dispatcher?.constructor?.name || 'unknown';
+  console.log(`[SkillKnowledge] 🔄 Manifest 拉取开始: ${url} (dispatcher: ${dispatcherType})`);
+
+  const startTime = Date.now();
+  let response: Response;
+  try {
+    // undici 使用 dispatcher，node-fetch polyfill 使用 agent，两者都传确保兼容
+    response = await fetch(url, { dispatcher, agent: dispatcher } as any);
+    const elapsed = Date.now() - startTime;
+    console.log(`[SkillKnowledge]   ✅ HTTP ${response.status} (${elapsed}ms, Content-Length: ${response.headers.get('content-length') || 'unknown'})`);
+  } catch (err: any) {
+    const elapsed = Date.now() - startTime;
+    const causeDetail = err.cause ? ` | cause: ${JSON.stringify(err.cause)}` : '';
+    const stackFirst = err.stack ? err.stack.split('\n').slice(0, 3).join(' ← ') : '';
+    console.error(`[SkillKnowledge]   ❌ fetch 失败 (${elapsed}ms): ${err.message}${causeDetail}`);
+    console.error(`[SkillKnowledge]     调用栈: ${stackFirst}`);
+    console.error(`[SkillKnowledge]     URL: ${url}`);
+    console.error(`[SkillKnowledge]     Node: ${process.version}, Dispatcher: ${dispatcherType}`);
+    throw new Error(`Manifest 拉取网络失败: ${err.message}${causeDetail}`);
+  }
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '(无法读取响应体)');
+    console.error(`[SkillKnowledge]   ❌ HTTP ${response.status}: ${body.substring(0, 500)}`);
+    throw new Error(`拉取 manifest 失败: HTTP ${response.status}`);
+  }
+
+  let data: ManifestResponse;
+  try {
+    const rawText = await response.text();
+    console.log(`[SkillKnowledge]   🔍 响应体大小: ${rawText.length} bytes, 开始 JSON 解析...`);
+    data = JSON.parse(rawText) as ManifestResponse;
+    console.log(`[SkillKnowledge]   ✅ JSON 解析成功: ${data.count} 个文件, root: ${data.root}`);
+  } catch (parseErr: any) {
+    console.error(`[SkillKnowledge]   ❌ JSON 解析失败: ${parseErr.message}`);
+    throw new Error(`Manifest JSON 解析失败: ${parseErr.message}`);
+  }
+
   manifestCache.clear();
   for (const file of data.files) manifestCache.set(file.path, file);
-  console.log(`[SkillKnowledge] Manifest 加载完成: ${data.count} 个文件`);
+  console.log(`[SkillKnowledge] ✅ Manifest 加载完成: ${data.count} 个文件, 缓存已刷新`);
   return data;
 }
 
 async function fetchSkillFile(filePath: string): Promise<string> {
   const url = `${SKILL_SERVER_URL}/file/${encodeURIComponent(filePath)}`;
-  // 内网自签证书: 同样忽略 TLS 验证
   const dispatcher = getFetchDispatcher();
-  const response = await fetch(url, { dispatcher, agent: dispatcher } as any);
-  if (!response.ok) throw new Error(`拉取文件失败: HTTP ${response.status} - ${filePath}`);
+  const startTime = Date.now();
+  console.log(`[SkillKnowledge] 🔄 文件拉取: ${filePath}`);
+
+  let response: Response;
+  try {
+    response = await fetch(url, { dispatcher, agent: dispatcher } as any);
+    const elapsed = Date.now() - startTime;
+    console.log(`[SkillKnowledge]   ✅ HTTP ${response.status} (${elapsed}ms, size: ${response.headers.get('content-length') || 'unknown'})`);
+  } catch (err: any) {
+    const elapsed = Date.now() - startTime;
+    const causeDetail = err.cause ? ` | cause: ${JSON.stringify(err.cause)}` : '';
+    console.error(`[SkillKnowledge]   ❌ fetch 失败 (${elapsed}ms): ${err.message}${causeDetail}`);
+    console.error(`[SkillKnowledge]     文件: ${filePath}, URL: ${url}`);
+    throw new Error(`文件拉取网络失败 [${filePath}]: ${err.message}${causeDetail}`);
+  }
+
+  if (!response.ok) {
+    console.error(`[SkillKnowledge]   ❌ HTTP ${response.status}: ${filePath}`);
+    throw new Error(`拉取文件失败: HTTP ${response.status} - ${filePath}`);
+  }
+
   const content = await response.text();
   fileCache.set(filePath, { content, timestamp: Date.now() });
+  console.log(`[SkillKnowledge]   ✅ 文件已缓存: ${filePath} (${content.length} bytes)`);
   return content;
 }
 
 async function readKnowledgeFile(filePath: string): Promise<string> {
-  if (builtinSkills.has(filePath)) return builtinSkills.get(filePath)!;
+  // 1. 内置 Skill（内存）
+  if (builtinSkills.has(filePath)) {
+    console.log(`[SkillKnowledge] 📖 读取内置 Skill: ${filePath}`);
+    return builtinSkills.get(filePath)!;
+  }
+  // 2. 缓存命中
   const cached = fileCache.get(filePath);
-  if (cached && (Date.now() - cached.timestamp) < CACHE_TTL * 1000) return cached.content;
+  if (cached && (Date.now() - cached.timestamp) < CACHE_TTL * 1000) {
+    console.log(`[SkillKnowledge] 📖 读取缓存: ${filePath} (${cached.content.length} bytes, ${Math.round((Date.now() - cached.timestamp) / 1000)}s 前)`);
+    return cached.content;
+  }
+  // 3. 远程拉取
+  console.log(`[SkillKnowledge] 📖 远程拉取: ${filePath} (缓存未命中或已过期)`);
   return await fetchSkillFile(filePath);
 }
 
