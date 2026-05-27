@@ -105,8 +105,8 @@
       "priority": 10,
       "goal": "通过 SetWeather / SetTime / SetDark 控制全局环境状态，用于氛围渲染与业务数据突出展示。",
       "keywords": ["天气控制", "昼夜切换", "环境模拟", "天气模拟", "场景压暗", "时间控制"],
-      "synonyms": ["白天黑夜", "日夜交替", "下雨", "下雪", "天气变化", "光照变化", "晴天", "雨天", "夜景", "氛围"],
-      "primary_skills": [],
+"synonyms": ["白天黑夜", "日夜交替", "下雨", "下雪", "天气变化", "光照变化", "晴天", "雨天", "夜景", "氛围"],
+      "primary_skills": ["reference/environment/SKILL.md"],
       "secondary_skills": [],
       "file": "scene-environment-control.json"
     },

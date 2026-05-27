@@ -828,7 +828,9 @@
             "relatedSkills": []
         }
     ],
-    "baseSkills": [],
+    "baseSkills": [
+        "reference/initialization/SKILL.md"
+    ],
     "builtinSkills": [
         "builtin/wdp-intent-orchestrator.md"
     ]

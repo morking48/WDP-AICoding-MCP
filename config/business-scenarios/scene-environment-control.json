@@ -33,7 +33,7 @@
     "按需开启压暗突出业务数据",
     "组件销毁时将所有全局状态还原为默认值"
   ],
-  "primary_skills": [],
+  "primary_skills": ["reference/environment/SKILL.md"],
   "secondary_skills": [],
   "required_clarifications": [
     "天气的具体值（Sunny/Rain/Snow/Fog 等）",
