@@ -14,8 +14,64 @@ import path from 'path';
 import https from 'https';
 
 // ========== 配置 ==========
+// v2: 2026-05-28 published version gate
 const SKILL_SERVER_URL = process.env.SKILL_SERVER_URL || 'http://wdpapi-skill.51aes.com';
 const CACHE_TTL = Number(process.env.CACHE_TTL) || 300;
+const PUBLISHED_API_BASE_URL = process.env.PUBLISHED_API_BASE_URL || '';
+const PUBLISHED_VERSIONS_CACHE_TTL = 300_000; // 5 minutes
+
+// ========== 发布版版本号缓存 ==========
+interface PublishedVersion { apiType: string; version: string; }
+let publishedVersionsCache: PublishedVersion[] | null = null;
+let publishedVersionsLastFetch = 0;
+
+async function fetchPublishedVersions(): Promise<PublishedVersion[]> {
+  if (!PUBLISHED_API_BASE_URL) {
+    console.log('[SkillKnowledge] PUBLISHED_API_BASE_URL not configured, skip version fetch');
+    return [];
+  }
+  if (publishedVersionsCache && (Date.now() - publishedVersionsLastFetch) < PUBLISHED_VERSIONS_CACHE_TTL) {
+    return publishedVersionsCache;
+  }
+  try {
+    const url = `${PUBLISHED_API_BASE_URL}/type/list`;
+    console.log(`[SkillKnowledge] Fetching published versions: ${url}`);
+    const resp = await fetch(url, { signal: AbortSignal.timeout(10_000) } as any);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const json = await resp.json() as any;
+    const versions: PublishedVersion[] = [];
+    for (const t of (json.data || [])) {
+      const latest = (t.versionList || [])
+        .filter((v: any) => v.version && !/early/i.test(v.version))
+        .sort((a: any, b: any) => {
+          const av = a.version.split('.').map(Number);
+          const bv = b.version.split('.').map(Number);
+          for (let i = 0; i < Math.max(av.length, bv.length); i++) {
+            if ((av[i] || 0) !== (bv[i] || 0)) return (bv[i] || 0) - (av[i] || 0);
+          }
+          return 0;
+        })[0];
+      if (latest) versions.push({ apiType: t.name, version: latest.version });
+    }
+    publishedVersionsCache = versions;
+    publishedVersionsLastFetch = Date.now();
+    console.log(`[SkillKnowledge] Published versions: ${versions.map(v => `${v.apiType}=${v.version}`).join(', ')}`);
+    return versions;
+  } catch (e: any) {
+    console.warn(`[SkillKnowledge] Failed to fetch published versions (using cache): ${e.message}`);
+    return publishedVersionsCache || [];
+  }
+}
+
+function compareVersion(required: string, published: string): boolean {
+  const r = required.split('.').map(Number);
+  const p = published.split('.').map(Number);
+  for (let i = 0; i < Math.max(r.length, p.length); i++) {
+    if ((r[i] || 0) > (p[i] || 0)) return false;
+    if ((r[i] || 0) < (p[i] || 0)) return true;
+  }
+  return true;
+}
 
 // ========== 类型 ==========
 interface ManifestFile { path: string; size: number; mtime: number; sha1: string; ext: string; }
@@ -558,7 +614,16 @@ async function buildWorkflowResponse(userRequirement: string, projectPath: strin
   ✓ 编码前：调用 enforce_routing_check 验证文件读取完整性
   ✓ 编码后：调用 trigger_self_evaluation 并传入 generated_code，MCP 会做 API 白名单存在性校验
 
-  🚨 未调用 enforce_routing_check 和 trigger_self_evaluation 之前禁止生成代码。`;
+🚨 未调用 enforce_routing_check 和 trigger_self_evaluation 之前禁止生成代码。`;
+
+  // 注入发布版版本信息（动态拉取，仅作排查参考）
+  let publishedVersionBlock = '';
+  try {
+    const publishedVersions = await fetchPublishedVersions();
+    if (publishedVersions.length > 0) {
+      publishedVersionBlock = `\n📋 当前对外商用发布版版本：${publishedVersions.map(v => `${v.apiType} ${v.version}`).join(' | ')}`;
+    }
+  } catch { /* non-blocking */ }
 
   // 场景命中 → 加载场景详情
   let sceneDetail: SceneDetail | null = null;
@@ -607,7 +672,7 @@ async function buildWorkflowResponse(userRequirement: string, projectPath: strin
     } : null,
     builtin_skills_preview: builtinContentPreviews,
     skill_api_summaries: skillApiSummaries,
-    guidance: sceneGuidance + consequenceBlock + (assetHint
+    guidance: sceneGuidance + consequenceBlock + publishedVersionBlock + (assetHint
       ? `\n📦 资产搜索：读取 ${assetHint.script}，用自然语言搜索 seedId。用法：python3 search_*.py "<描述>" --random ${assetHint.typeHint}\n`
       : ''),
   };
@@ -1020,7 +1085,42 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
         '🔍 生命周期检查：确认初始化 → 渲染 → 清理的完整链路',
         '🔍 初始化顺序检查：Plugin.Install 在 Renderer.Start 之前',
         '🔍 工程基线检查：确认使用 npm install wdpapi（非 CDN）',
-      ];
+];
+
+      // 版本提示：对比 Skill 版本要求 vs 发布版（非阻塞，仅提示）
+      let versionWarnings: string[] = [];
+      try {
+        const publishedVersions = await fetchPublishedVersions();
+        if (publishedVersions.length > 0 && usedSkills.length > 0) {
+          for (const sp of usedSkills) {
+            try {
+              const content = await readKnowledgeFile(sp);
+              // Extract version requirement like "WDPAPI >= 2.4.0"
+              let mappedType = 'WDP API';
+              let minVer = '';
+              const lc = content.toLowerCase();
+              const idxWDP = lc.indexOf('wdpapi >=');
+              const idxGIS = lc.indexOf('gis api >=');
+              const idxBIM = lc.indexOf('bim api >=');
+              const idxWIM = lc.indexOf('wim api >=');
+              let idx = idxWDP;
+              if (idxGIS >= 0) { idx = idxGIS; mappedType = 'GIS API'; }
+              else if (idxBIM >= 0) { idx = idxBIM; mappedType = 'BIM API'; }
+              else if (idxWIM >= 0) { idx = idxWIM; mappedType = 'WIM API'; }
+              if (idx >= 0) {
+                const after = lc.substring(idx).match(/[\d.]+/);
+                if (after) minVer = after[0];
+              }
+                if (minVer) {
+                const pubVer = publishedVersions.find(v => v.apiType === mappedType);
+                if (pubVer && !compareVersion(minVer, pubVer.version)) {
+                  versionWarnings.push(`⚠️ ${sp} 要求 ${mappedType} >= ${minVer}，但当前发布版为 ${pubVer.version}`);
+                }
+              }
+            } catch { /* skip individual skill errors */ }
+          }
+        }
+      } catch { /* version check is non-blocking */ }
 
       // 构建最终结果
       const apiPassed = apiCheckResult ? apiCheckResult.passed : true;
@@ -1050,7 +1150,8 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
             passed: stepCoverage.passed,
             total_steps: stepCoverage.total_steps,
             missing_steps: stepCoverage.missing_steps,
-          } : null,
+} : null,
+          version_warnings: versionWarnings,
           soft_checks: checks,
           written_files: writtenFiles,
           used_skills: usedSkills,
@@ -1058,7 +1159,7 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
         };
       }
 
-      return {
+return {
         passed: true,
         api_whitelist_check: {
           passed: true,
@@ -1071,6 +1172,7 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
           total_steps: stepCoverage.total_steps,
           message: `✅ 全部 ${stepCoverage.total_steps} 个场景步骤已覆盖`,
         } : null,
+        version_warnings: versionWarnings,
         soft_checks: checks,
         written_files: writtenFiles,
         used_skills: usedSkills,
