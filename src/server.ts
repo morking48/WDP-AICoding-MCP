@@ -216,6 +216,17 @@ app.delete('/admin/tokens/:token', adminAuthMiddleware, (req, res) => {
   res.json({ success: ok, message: ok ? 'Token 已删除' : 'Token 不存在' });
 });
 
+app.put('/admin/tokens/:token', adminAuthMiddleware, (req, res) => {
+  const { name } = req.body;
+  if (!name) {
+    res.status(400).json({ error: '缺少 name 参数' });
+    return;
+  }
+  const { updateToken } = require('./utils/tokenManager');
+  const ok = updateToken(req.params.token, { name });
+  res.json({ success: ok, message: ok ? 'Token 名称已更新' : 'Token 不存在' });
+});
+
 app.post('/admin/tokens/:token/disable', adminAuthMiddleware, (req, res) => {
   const { disableToken } = require('./utils/tokenManager');
   const ok = disableToken(req.params.token, req.body.reason);
