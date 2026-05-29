@@ -1,6 +1,6 @@
 {
   "_deprecated": true,
-  "_deprecated_message": "此文件未被运行时代码引用，规则已硬编码在 skillKnowledge.ts 中。若需修改检查规则，请直接编辑 skillKnowledge.ts 中 trigger_self_evaluation 的 checks 数组。",
+  "_deprecated_message": "此文件未被运行时代码引用。版本比对已升级为逐功能细粒度检查，以 Skill 文件中声明的版本要求和用户工程实际 SDK 版本为准。保留此文件仅供结构参考。",
   "version": "1.0.0",
   "description": "API 合规检查清单，供 enforce_* 和 trigger_self_evaluation 使用",
   "checks": [
