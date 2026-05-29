@@ -45,13 +45,9 @@ description: WDP 意图编排与需求精确化。用于在编码前把自然语
 > 实际的 `api_whitelist` 中只有 `FocusToAll`、`Focus`、`FlyTo`、`Follow`、`Around`。
 > 仅靠"读了文件"无法防止此类幻觉。编码后务必调用 `trigger_self_evaluation` 做最终验证。
 
-## 统一基线
+## 版本说明
 
-| 包名 | 版本 |
-|------|------|
-| 核心 SDK | `wdpapi@^2.3.0` |
-| BIM 插件 | `@wdp-api/bim-api@^2.2.1` |
-| GIS 插件 | `@wdp-api/gis-api@^2.1.0` |
+以用户工程实际安装的 SDK 版本为准。各 Skill 文件中的版本要求（如"需要 WDPAPI >= X.Y.Z"）用于 API 兼容性检查，MCP 会根据用户 SDK 版本自动提示版本冲突。
 
 ## 阻断性要求（6条）
 
