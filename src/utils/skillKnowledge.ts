@@ -73,6 +73,26 @@ function compareVersion(required: string, published: string): boolean {
   return true;
 }
 
+/**
+ * 从 SKILL.md 正文提取逐功能版本要求（格式 B）
+ * 输入: "⚠️ **版本要求：** overlapOrder 需要 WDPAPI >= 1.6.0；labelContentOffset 需要 WDPAPI >= 1.7.0"
+ * 输出: [{ feature: 'overlapOrder', minVersion: '1.6.0' }, ...]
+ */
+function extractSkillVersionRequirements(content: string): Array<{ feature: string; minVersion: string }> {
+  const results: Array<{ feature: string; minVersion: string }> = [];
+  const block = content.match(/版本要求[：:]\s*([\s\S]*?)(?:\n\n|\n> [^⚠])/);
+  if (!block) return results;
+  const itemRe = /([^；;，,\n]+?)\s*需要\s*WDPAPI\s*>=\s*([\d.]+)/g;
+  let m;
+  while ((m = itemRe.exec(block[1])) !== null) {
+    const feature = m[1].replace(/[`*_]/g, '').trim();
+    if (feature && feature.length < 60) {
+      results.push({ feature, minVersion: m[2] });
+    }
+  }
+  return results;
+}
+
 // ========== 类型 ==========
 interface ManifestFile { path: string; size: number; mtime: number; sha1: string; ext: string; }
 interface ManifestResponse { root: string; count: number; total_size: number; files: ManifestFile[]; }
@@ -619,13 +639,14 @@ const consequenceBlock = `⚠️ 所有 WDP API 签名以 Skill 文件为准，�
   }
 
   // 9. 预提取 API 白名单摘要（不读全文，仅方法名列表，轻量注入防幻觉）
-  const skillApiSummaries: Array<{ path: string; apis: string[] }> = [];
+  const skillApiSummaries: Array<{ path: string; apis: string[]; version_requirements?: Array<{ feature: string; minVersion: string }> }> = [];
   for (const sp of matchedSkills) {
     try {
-      const content = await readKnowledgeFile(sp);
+const content = await readKnowledgeFile(sp);
       const apis = [...extractApiFromSkillContent(content)];
-      if (apis.length > 0) {
-        skillApiSummaries.push({ path: sp, apis: apis.slice(0, 30) });
+      const verReqs = extractSkillVersionRequirements(content);
+      if (apis.length > 0 || verReqs.length > 0) {
+        skillApiSummaries.push({ path: sp, apis: apis.slice(0, 30), version_requirements: verReqs });
       }
     } catch {
       // 读取失败跳过，AI 需自行调用 read_knowledge_file
@@ -898,20 +919,28 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
       return buildWorkflowResponse(userRequirement, projectPath);
     }
 
-    case 'read_knowledge_file': {
+case 'read_knowledge_file': {
       const filePath = args.path as string;
       if (!filePath) return { error: '缺少 path 参数' };
       try {
         const content = await readKnowledgeFile(filePath);
         const forceFull = args.force_full === true;
+        // 提取版本要求（逐功能细粒度）
+        const versionRequirements = extractSkillVersionRequirements(content);
         if (forceFull) {
           const { fileHash, lineCount } = generateDigest(content);
-          // 注入 API 白名单 — 编码时只能使用这些 API
           const apiWhitelist = extractApiFromSkillContent(content);
-          return { path: filePath, content, fileHash, lineCount, mode: 'full', api_whitelist: [...apiWhitelist] };
+          return {
+            path: filePath, content, fileHash, lineCount, mode: 'full',
+            api_whitelist: [...apiWhitelist],
+            version_requirements: versionRequirements,
+          };
         }
         const { summary, fileHash, lineCount } = generateDigest(content);
-        return { path: filePath, summary, fileHash, lineCount, mode: 'summary' };
+        return {
+          path: filePath, summary, fileHash, lineCount, mode: 'summary',
+          version_requirements: versionRequirements,
+        };
       } catch (error: any) {
         return { error: `读取失败: ${error.message}`, path: filePath };
       }
@@ -1034,34 +1063,21 @@ case 'list_skills': {
         '🔍 工程基线检查：确认使用 npm install wdpapi（非 CDN）',
 ];
 
-      // 版本提示：对比 Skill 版本要求 vs 发布版（非阻塞，仅提示）
+// 版本提示：逐功能对比版本要求 vs 发布版（非阻塞，仅提示）
       let versionWarnings: string[] = [];
       try {
         const publishedVersions = await fetchPublishedVersions();
         if (publishedVersions.length > 0 && usedSkills.length > 0) {
+          const wdpPublished = publishedVersions.find(v => v.apiType === 'WDP API');
           for (const sp of usedSkills) {
             try {
               const content = await readKnowledgeFile(sp);
-              // Extract version requirement like "WDPAPI >= 2.4.0"
-              let mappedType = 'WDP API';
-              let minVer = '';
-              const lc = content.toLowerCase();
-              const idxWDP = lc.indexOf('wdpapi >=');
-              const idxGIS = lc.indexOf('gis api >=');
-              const idxBIM = lc.indexOf('bim api >=');
-              const idxWIM = lc.indexOf('wim api >=');
-              let idx = idxWDP;
-              if (idxGIS >= 0) { idx = idxGIS; mappedType = 'GIS API'; }
-              else if (idxBIM >= 0) { idx = idxBIM; mappedType = 'BIM API'; }
-              else if (idxWIM >= 0) { idx = idxWIM; mappedType = 'WIM API'; }
-              if (idx >= 0) {
-                const after = lc.substring(idx).match(/[\d.]+/);
-                if (after) minVer = after[0];
-              }
-                if (minVer) {
-                const pubVer = publishedVersions.find(v => v.apiType === mappedType);
-                if (pubVer && !compareVersion(minVer, pubVer.version)) {
-                  versionWarnings.push(`⚠️ ${sp} 要求 ${mappedType} >= ${minVer}，但当前发布版为 ${pubVer.version}`);
+              const verReqs = extractSkillVersionRequirements(content);
+              if (verReqs.length > 0 && wdpPublished) {
+                for (const { feature, minVersion } of verReqs) {
+                  if (!compareVersion(minVersion, wdpPublished.version)) {
+                    versionWarnings.push(`⚠️ ${sp} 中 ${feature} 需要 WDP API >= ${minVersion}，当前发布版为 ${wdpPublished.version}`);
+                  }
                 }
               }
             } catch { /* skip individual skill errors */ }
