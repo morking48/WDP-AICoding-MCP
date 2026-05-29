@@ -524,8 +524,8 @@ async function buildWorkflowResponse(userRequirement: string, projectPath: strin
   }
 
   // 3. 收集所有匹配的 Skill 路径（场景优先 + 关键词补充）
-  const matchedSkills: string[] = [];
-  const requiredRelatedSkills: string[] = [];
+const matchedSkills: string[] = [];
+  // v1.1: 去掉了 requiredRelatedSkills 独立列表，相关技能直接合并到 matched_skills
 
   // 场景命中 → 场景的 primary_skills + secondary_skills 作为主干
   if (scene) {
@@ -537,13 +537,13 @@ async function buildWorkflowResponse(userRequirement: string, projectPath: strin
     }
   }
 
-  // 关键词路由的 Skill（补充场景未覆盖的子能力）
+// 关键词路由的 Skill（补充场景未覆盖的子能力）
   if (primaryRoute) {
     if (!matchedSkills.includes(primaryRoute.skillPath)) {
       matchedSkills.push(primaryRoute.skillPath);
     }
     for (const f of primaryRoute.relatedSkills) {
-      if (!requiredRelatedSkills.includes(f)) requiredRelatedSkills.push(f);
+      if (!matchedSkills.includes(f)) matchedSkills.push(f);
     }
   }
 
@@ -569,52 +569,32 @@ async function buildWorkflowResponse(userRequirement: string, projectPath: strin
       builtinContentPreviews.push({ path: bs, preview: excerpt });
     }
   }
-  // 5.5 全文模糊搜索（仅场景未命中时追加，避免与场景推荐冲突）
-  const suggestedSkills: string[] = [];
+// 5.5 全文模糊搜索（仅场景未命中时追加；场景命中时跳过，避免混淆）
   if (!scene) {
     const fuzzySkills = searchFuzzySkills(userRequirement);
     for (const fs of fuzzySkills) {
       if (!matchedSkills.includes(fs)) matchedSkills.push(fs);
     }
-  } else {
-    // 场景命中时，fuzzy search 结果作为参考建议，不直接合并到 matched_skills
-    const fuzzySkills = searchFuzzySkills(userRequirement);
-    for (const fs of fuzzySkills) {
-      if (!matchedSkills.includes(fs)) suggestedSkills.push(fs);
-    }
   }
 
   // 6. matched_skills 去重（保留原始顺序）
-  const uniqueMatchedSkills = [...new Set(matchedSkills)];
-  const uniqueSuggestedSkills = [...new Set(suggestedSkills)];
+const uniqueMatchedSkills = [...new Set(matchedSkills)];
 
   const isComplex = keywordResults.length > 3 || userRequirement.length > 50;
 
-  // 6. 构建工作流步骤
+// 6. 构建工作流步骤
   const workflowSteps: string[] = [];
   if (scene) workflowSteps.push(`🎯 场景: ${scene.name} — ${scene.goal}`);
-  workflowSteps.push('Step 1: 意图编排 → 读取 builtin/wdp-intent-orchestrator.md');
-  workflowSteps.push('Step 2: 初始化 → 读取 reference/initialization/SKILL.md');
-  if (primaryRoute && !scene) workflowSteps.push(`Step 3: 核心功能 → 读取 ${primaryRoute.skillPath}`);
-  if (scene) workflowSteps.push(`Step 3: 场景核心 Skill → 读取 ${scene.primary_skills.join(', ')}`);
-  if (requiredRelatedSkills.length > 0) workflowSteps.push(`Step 4: 关联 Skill → 读取 ${requiredRelatedSkills.join(', ')}`);
-  if (scene && scene.secondary_skills.length > 0) workflowSteps.push(`Step 5: 场景辅助 Skill → 读取 ${scene.secondary_skills.join(', ')}`);
-  // v1.3: 资产搜索步骤
-  if (assetHint) workflowSteps.push(`🔍 ${assetHint.label} → 读取 ${assetHint.script} 获取 seedId`);
+  workflowSteps.push('Step 1: 读取 builtin/wdp-intent-orchestrator.md（防幻觉规则）');
+  workflowSteps.push('Step 2: 用 force_full: true 逐个读取 matched_skills 中所有 Skill 文件');
+  workflowSteps.push('Step 3: 调用 enforce_routing_check 验证文件读取完整性');
+  workflowSteps.push('Step 4: 编码');
+  workflowSteps.push('Step 5: 调用 trigger_self_evaluation 传入 generated_code + used_skills');
   // 8. 构建 guidance（注入后果前置 + API 白名单提示）
   const sceneGuidance = scene
     ? `🎯 当前场景：${scene.name} — ${scene.goal}\n`
     : '';
-  const consequenceBlock = `🚨 跳过 Skill 文件阅读的 3 种后果：
-  1) 编造不存在的 API → 代码运行时直接报错
-  2) 参数名拼错（如 scale→scale3d, text→labelContent）→ 功能静默失效
-  3) 漏掉清理链路 → 内存泄漏 / GPU 资源不释放
-
-  防线：
-  ✓ 编码前：调用 enforce_routing_check 验证文件读取完整性
-  ✓ 编码后：调用 trigger_self_evaluation 并传入 generated_code，MCP 会做 API 白名单存在性校验
-
-🚨 未调用 enforce_routing_check 和 trigger_self_evaluation 之前禁止生成代码。`;
+const consequenceBlock = `⚠️ 所有 WDP API 签名以 Skill 文件为准，禁止凭记忆编造。编码前必须读取 matched_skills 中所有文件（force_full: true），编码后必须调用 trigger_self_evaluation 校验。`;
 
   // 注入发布版版本信息（动态拉取，仅作排查参考）
   let publishedVersionBlock = '';
@@ -655,21 +635,15 @@ async function buildWorkflowResponse(userRequirement: string, projectPath: strin
   return {
     user_requirement: userRequirement,
     project_path: projectPath,
-    matched_skills: uniqueMatchedSkills,
-    suggested_skills: uniqueSuggestedSkills,
-    required_related_skills: requiredRelatedSkills,
-    workflow_steps: workflowSteps,
-    primary_domain: primaryRoute?.domain || null,
-    primary_label: primaryRoute?.label || null,
-    is_complex: isComplex,
-    keyword_matches: keywordResults.slice(0, 5),
-    disambiguation: disambiguatedDomain || null,
-    scene: scene ? { id: scene.id, name: scene.name, goal: scene.goal } : null,
+matched_skills: uniqueMatchedSkills,
+workflow_steps: workflowSteps,
+scene: scene ? { id: scene.id, name: scene.name, goal: scene.goal } : null,
     scene_detail: sceneDetail ? {
       task_breakdown: sceneDetail.task_breakdown,
       api_flow: sceneDetail.api_flow,
       modules: sceneDetail.modules?.map(m => ({ name: m.name, wdp_apis: m.wdp_apis, purpose: m.purpose })),
     } : null,
+    is_complex: isComplex,
     builtin_skills_preview: builtinContentPreviews,
     skill_api_summaries: skillApiSummaries,
     guidance: sceneGuidance + consequenceBlock + publishedVersionBlock + (assetHint
