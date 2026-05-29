@@ -73,12 +73,20 @@ function extractSkillVersionRequirements(content: string): Array<{ feature: stri
   const results: Array<{ feature: string; minVersion: string }> = [];
   const block = content.match(/版本要求[：:]\s*([\s\S]*?)(?:\n\n|\n> [^⚠])/);
   if (!block) return results;
+  // 格式 B: 逐功能版本（如 "overlapOrder 需要 WDPAPI >= 1.6.0"）
   const itemRe = /([^；;，,\n]+?)\s*需要\s*WDPAPI\s*>=\s*([\d.]+)/g;
   let m;
   while ((m = itemRe.exec(block[1])) !== null) {
     const feature = m[1].replace(/[`*_]/g, '').trim();
     if (feature && feature.length < 60) {
       results.push({ feature, minVersion: m[2] });
+    }
+  }
+  // 格式 A: 统一阈值（如 "需要 WDPAPI >= 2.4.0"，无特征名）
+  if (results.length === 0) {
+    const threshold = block[1].match(/需要\s*WDPAPI\s*>=\s*([\d.]+)/);
+    if (threshold) {
+      results.push({ feature: '（本模块全部 API）', minVersion: threshold[1] });
     }
   }
   return results;
