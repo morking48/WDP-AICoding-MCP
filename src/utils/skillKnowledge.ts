@@ -607,10 +607,12 @@ const uniqueMatchedSkills = [...new Set(matchedSkills)];
     : '';
 const consequenceBlock = `⚠️ 所有 WDP API 签名以 Skill 文件为准，禁止凭记忆编造。编码前必须读取 matched_skills 中所有文件（force_full: true），编码后必须调用 trigger_self_evaluation 校验。`;
 
-  // SDK 版本提示
+// SDK 版本提示
   let sdkVersionBlock = '';
   if (sdkVersion) {
-    sdkVersionBlock = `\\n📦 用户工程 SDK 版本: wdpapi@${sdkVersion}`;
+    sdkVersionBlock = `\n📦 用户工程 SDK 版本: wdpapi@${sdkVersion}`;
+  } else {
+    sdkVersionBlock = '\n📦 未检测到工程 SDK 版本，请向用户确认 wdpapi 版本号后传入 sdk_version 参数，用于 API 版本兼容检查';
   }
 
   // 注入发布版版本信息（动态拉取，仅作排查参考）
@@ -843,6 +845,7 @@ const MCP_TOOL_DEFINITIONS: McpToolDef[] = [
       properties: {
         user_requirement: { type: 'string', description: '用户的自然语言需求描述' },
         projectPath: { type: 'string', description: '用户项目路径' },
+        sdk_version: { type: 'string', description: '用户工程 wdpapi SDK 版本（可选，客户端自动检测；如检测失败请向用户确认后传入，用于 API 版本兼容检查）' },
       },
       required: ['user_requirement', 'projectPath'],
     },
