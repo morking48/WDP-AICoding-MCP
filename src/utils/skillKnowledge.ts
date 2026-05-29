@@ -839,19 +839,7 @@ const MCP_TOOL_DEFINITIONS: McpToolDef[] = [
       },
       required: ['path'],
     },
-  },
-  {
-    name: 'query_knowledge',
-    description: '按关键词搜索 Skill 知识库（同时搜索文件路径和已缓存的文件内容）',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: '搜索关键词' },
-        skill_path: { type: 'string', description: '限定搜索范围（可选）' },
-      },
-      required: ['query'],
-    },
-  },
+},
   {
     name: 'list_skills',
     description: '列出所有可用的 Skill 条目',
@@ -929,44 +917,7 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
       }
     }
 
-case 'query_knowledge': {
-      const query = (args.query as string || '').toLowerCase();
-      const skillPath = args.skill_path as string | undefined;
-      const results: Array<{ path: string; size: number; sha1: string; matchType: string }> = [];
-
-      // 1. 搜索文件路径
-      for (const [p, f] of manifestCache) {
-        if (!p.startsWith('reference/')) continue;
-        if (skillPath && !p.includes(skillPath)) continue;
-        if (p.toLowerCase().includes(query)) {
-          results.push({ path: p, size: f.size, sha1: f.sha1, matchType: 'path' });
-        }
-      }
-      for (const [p] of builtinSkills) {
-        if (p.toLowerCase().includes(query)) {
-          results.push({ path: p, size: 0, sha1: '', matchType: 'path' });
-        }
-      }
-
-      // 2. 搜索已缓存的文件内容
-      for (const [p, cache] of fileCache) {
-        if (!p.startsWith('reference/')) continue;
-        if (skillPath && !p.includes(skillPath)) continue;
-        // 避免重复（已在路径匹配中）
-        if (results.some(r => r.path === p)) continue;
-        if (cache.content.toLowerCase().includes(query)) {
-          results.push({ path: p, size: cache.content.length, sha1: '', matchType: 'content' });
-        }
-      }
-
-      return {
-        query,
-        total: results.length,
-        results: results.slice(0, 20).map(r => ({ path: r.path, size: r.size, sha1: r.sha1, match_type: r.matchType })),
-      };
-    }
-
-    case 'list_skills': {
+case 'list_skills': {
       const entries = listKnowledgeEntries();
       return { total: entries.length, skills: entries.map(e => ({ path: e.path, size: e.size, sha1: e.sha1 })) };
     }
