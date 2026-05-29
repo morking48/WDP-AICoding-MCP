@@ -77,19 +77,7 @@ description: WDP 意图编排与需求精确化。用于在编码前把自然语
 
 ### 2. 确认路由（已自动完成）
 
-路由结果已通过 `start_wdp_workflow` 返回，场景匹配为最高优先级路由。
-
-> **常用映射参考**（实际路由以 `matched_skills` 和 `workflow_steps` 为准。路由配置文件：`config/skill-route-mapping.json` + `config/business-scenarios/_index.json`）：
->
-> | 能力域 | 参考 Skill（可能已变更） |
-> |--------|----------------------|
-> | 初始化 | `reference/initialization/SKILL.md` |
-> | 事件注册 | `reference/renderer/SKILL.md` |
-> | 相机控制/跟随 | `reference/camera/camera-control/SKILL.md` |
-> | 覆盖物/POI/路径 | `reference/scene/covering/poi/SKILL.md` |
-> | BIM 操作 | `reference/system/plugin/bimapi/SKILL.md` |
-> | GIS 操作 | `reference/system/plugin/gisapi/SKILL.md` |
-> | 场景发现/拾取 | `reference/tools/picker/SKILL.md` + `reference/scene/outliner/SKILL.md` |
+`start_wdp_workflow` 已完成全部路由匹配。直接使用返回的 `matched_skills` 列表，**无需再做任何手动路由或关键词匹配**。
 
 ### 3. 执行输入门禁
 
