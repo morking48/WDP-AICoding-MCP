@@ -512,7 +512,7 @@ function applyDisambiguation(requirement: string, keywordResults: { domain: stri
  *
  * 长期方案：统一为单一匹配引擎，所有 Skill 路径从场景模板派生。
  */
-async function buildWorkflowResponse(userRequirement: string, projectPath: string): Promise<any> {
+async function buildWorkflowResponse(userRequirement: string, projectPath: string, sdkVersion?: string): Promise<any> {
   const mapping = loadRouteMapping();
 
   // 1. 场景模板匹配（优先执行，场景=主裁判，旧版架构核心逻辑）
@@ -607,6 +607,12 @@ const uniqueMatchedSkills = [...new Set(matchedSkills)];
     : '';
 const consequenceBlock = `⚠️ 所有 WDP API 签名以 Skill 文件为准，禁止凭记忆编造。编码前必须读取 matched_skills 中所有文件（force_full: true），编码后必须调用 trigger_self_evaluation 校验。`;
 
+  // SDK 版本提示
+  let sdkVersionBlock = '';
+  if (sdkVersion) {
+    sdkVersionBlock = `\\n📦 用户工程 SDK 版本: wdpapi@${sdkVersion}`;
+  }
+
   // 注入发布版版本信息（动态拉取，仅作排查参考）
   let publishedVersionBlock = '';
   try {
@@ -656,9 +662,10 @@ scene: scene ? { id: scene.id, name: scene.name, goal: scene.goal } : null,
       modules: sceneDetail.modules?.map(m => ({ name: m.name, wdp_apis: m.wdp_apis, purpose: m.purpose })),
     } : null,
     is_complex: isComplex,
+    sdk_version: sdkVersion || null,
     builtin_skills_preview: builtinContentPreviews,
     skill_api_summaries: skillApiSummaries,
-    guidance: sceneGuidance + consequenceBlock + publishedVersionBlock + (assetHint
+    guidance: sceneGuidance + consequenceBlock + sdkVersionBlock + publishedVersionBlock + (assetHint
       ? `\n📦 资产搜索：读取 ${assetHint.script}，用自然语言搜索 seedId。用法：python3 search_*.py "<描述>" --random ${assetHint.typeHint}\n`
       : ''),
   };
@@ -890,6 +897,7 @@ const MCP_TOOL_DEFINITIONS: McpToolDef[] = [
         written_files: { type: 'array', items: { type: 'string' }, description: '已写入的文件路径' },
         used_skills: { type: 'array', items: { type: 'string' }, description: '使用的 Skill 路径（从 workflow_result.matched_skills 获取）' },
         scenario_id: { type: 'string', description: '场景 ID（可选）' },
+        sdk_version: { type: 'string', description: '用户工程 wdpapi SDK 版本（可选，从 start_wdp_workflow 返回的 sdk_version 获取）' },
       },
       required: ['generated_code', 'used_skills'],
     },
@@ -907,7 +915,8 @@ export async function handleMcpToolCall(tool: string, args: Record<string, any>)
       const userRequirement = args.user_requirement as string;
       const projectPath = args.projectPath as string;
       if (!userRequirement || !projectPath) return { error: '缺少 user_requirement 或 projectPath 参数' };
-      return buildWorkflowResponse(userRequirement, projectPath);
+      const sdkVersion = args.sdk_version as string | undefined;
+      return buildWorkflowResponse(userRequirement, projectPath, sdkVersion);
     }
 
 case 'read_knowledge_file': {
@@ -1046,6 +1055,30 @@ case 'list_skills': {
         }
       }
 
+      // SDK 版本比对：逐功能检查 Skill 版本要求是否超过用户 SDK 版本
+      let sdkVersionWarnings: string[] = [];
+      const sdkVer = (args.sdk_version as string) || '';
+      if (sdkVer && usedSkills.length > 0) {
+        for (const sp of usedSkills) {
+          try {
+            const content = await readKnowledgeFile(sp);
+            const verReqs = extractSkillVersionRequirements(content);
+            for (const { feature, minVersion } of verReqs) {
+              const req = minVersion.split('.').map(Number);
+              const sdk = sdkVer.split('.').map(Number);
+              let isOk = true;
+              for (let i = 0; i < Math.max(req.length, sdk.length); i++) {
+                if ((req[i] || 0) > (sdk[i] || 0)) { isOk = false; break; }
+                if ((req[i] || 0) < (sdk[i] || 0)) break;
+              }
+              if (!isOk) {
+                sdkVersionWarnings.push(`⚠️ ${sp} 中 ${feature} 需要 WDP API >= ${minVersion}，当前工程 SDK 版本为 ${sdkVer}`);
+              }
+            }
+          } catch { /* skip */ }
+        }
+      }
+
       // 软检查（仅保留不重复的 4 条）
       const checks = [
         '🔍 占位符检查：确认代码中无 YOUR_URL、YOUR_TOKEN 等假值',
@@ -1084,6 +1117,7 @@ case 'list_skills': {
             total_steps: stepCoverage.total_steps,
             missing_steps: stepCoverage.missing_steps,
 } : null,
+          sdk_version_warnings: sdkVersionWarnings,
           soft_checks: checks,
           written_files: writtenFiles,
           used_skills: usedSkills,
@@ -1104,6 +1138,7 @@ return {
           total_steps: stepCoverage.total_steps,
           message: `✅ 全部 ${stepCoverage.total_steps} 个场景步骤已覆盖`,
         } : null,
+        sdk_version_warnings: sdkVersionWarnings,
         soft_checks: checks,
         written_files: writtenFiles,
         used_skills: usedSkills,
