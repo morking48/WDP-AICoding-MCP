@@ -264,6 +264,7 @@ async function start() {
     console.log(`  GET  /admin/tokens        - Token 列表`);
     console.log(`  POST /admin/tokens        - 添加 Token`);
     console.log(`  DELETE /admin/tokens/:token - 删除 Token`);
+    console.log(`  PUT /admin/tokens/:token   - 修改 Token 名称`);
     console.log(`  POST /admin/tokens/:token/disable - 禁用 Token`);
     console.log(`  POST /admin/tokens/:token/enable  - 启用 Token`);
 
