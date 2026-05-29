@@ -63,15 +63,6 @@ async function fetchPublishedVersions(): Promise<PublishedVersion[]> {
   }
 }
 
-function compareVersion(required: string, published: string): boolean {
-  const r = required.split('.').map(Number);
-  const p = published.split('.').map(Number);
-  for (let i = 0; i < Math.max(r.length, p.length); i++) {
-    if ((r[i] || 0) > (p[i] || 0)) return false;
-    if ((r[i] || 0) < (p[i] || 0)) return true;
-  }
-  return true;
-}
 
 /**
  * 从 SKILL.md 正文提取逐功能版本要求（格式 B）
@@ -1063,27 +1054,6 @@ case 'list_skills': {
         '🔍 工程基线检查：确认使用 npm install wdpapi（非 CDN）',
 ];
 
-// 版本提示：逐功能对比版本要求 vs 发布版（非阻塞，仅提示）
-      let versionWarnings: string[] = [];
-      try {
-        const publishedVersions = await fetchPublishedVersions();
-        if (publishedVersions.length > 0 && usedSkills.length > 0) {
-          const wdpPublished = publishedVersions.find(v => v.apiType === 'WDP API');
-          for (const sp of usedSkills) {
-            try {
-              const content = await readKnowledgeFile(sp);
-              const verReqs = extractSkillVersionRequirements(content);
-              if (verReqs.length > 0 && wdpPublished) {
-                for (const { feature, minVersion } of verReqs) {
-                  if (!compareVersion(minVersion, wdpPublished.version)) {
-                    versionWarnings.push(`⚠️ ${sp} 中 ${feature} 需要 WDP API >= ${minVersion}，当前发布版为 ${wdpPublished.version}`);
-                  }
-                }
-              }
-            } catch { /* skip individual skill errors */ }
-          }
-        }
-      } catch { /* version check is non-blocking */ }
 
       // 构建最终结果
       const apiPassed = apiCheckResult ? apiCheckResult.passed : true;
@@ -1114,7 +1084,6 @@ case 'list_skills': {
             total_steps: stepCoverage.total_steps,
             missing_steps: stepCoverage.missing_steps,
 } : null,
-          version_warnings: versionWarnings,
           soft_checks: checks,
           written_files: writtenFiles,
           used_skills: usedSkills,
@@ -1135,7 +1104,6 @@ return {
           total_steps: stepCoverage.total_steps,
           message: `✅ 全部 ${stepCoverage.total_steps} 个场景步骤已覆盖`,
         } : null,
-        version_warnings: versionWarnings,
         soft_checks: checks,
         written_files: writtenFiles,
         used_skills: usedSkills,
