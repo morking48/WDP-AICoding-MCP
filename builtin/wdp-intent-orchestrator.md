@@ -20,14 +20,12 @@ description: WDP 意图编排与需求精确化。用于在编码前把自然语
 
 - **场景模板匹配**（`scene` 字段）：基于 `config/business-scenarios/_index.json`，SCENE 匹配为最高优先级路由（先于关键词匹配）。命中后场景的 `primary_skills + secondary_skills` 直接作为主 Skill 列表
 - **关键词加权兜底**（场景未命中时）：基于 `config/skill-route-mapping.json`
-- **API 调用模式匹配**（`api_patterns` 字段）：基于 `config/api-patterns.json`
 
 **返回结果中的关键字段**：
 - `matched_skills` — 所有需要读取的 Skill 文件路径列表（场景优先排序）
 - `workflow_steps` — **权威执行步骤**，请严格按此顺序执行
 - `builtin_skills_preview` — 内置 Skill（本文档）的前 1500 字内容预览，已自动注入
 - `scene` — 命中的业务场景（名称 + 目标描述）
-- `api_patterns` — 匹配的 API 调用模式（`api_sequence + data_flow + notes`）
 
 ## 执行流程
 

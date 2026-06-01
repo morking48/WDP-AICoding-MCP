@@ -726,15 +726,23 @@ function extractApiFromSkillContent(content: string): Set<string> {
  * 从 api_flow 的 api 字符串中提取标准化 API 名
  * "new App.Path({...})" → "App.Path"
  * "App.CameraControl.UpdateCamera" → "App.CameraControl.UpdateCamera"
+ * "App.Scene.SetWeather" → "App.Scene.SetWeather"
  * "entityObj.Delete()" → ".Delete"
+ * 裸方法名（无括号）也支持，直接返回
  */
 function extractApiName(apiStr: string): string | null {
   // new App.Xxx( → App.Xxx
   const cm = apiStr.match(/new\s+(App\.\w+)\s*\(/);
   if (cm) return cm[1];
+  // new App.Xxx（无括号构造）
+  const cmBare = apiStr.match(/new\s+(App\.\w+)/);
+  if (cmBare) return cmBare[1];
   // App.Xxx.Yyy( → App.Xxx.Yyy
   const smm = apiStr.match(/(App\.\w+(?:\.\w+)+)\s*\(/);
   if (smm) return smm[1];
+  // App.Xxx.Yyy（无括号静态方法）
+  const smmBare = apiStr.match(/(App\.\w+(?:\.\w+)+)/);
+  if (smmBare) return smmBare[1];
   // obj.method( → .Method
   const emm = apiStr.match(/\.(\w+)\s*\(/);
   if (emm && emm[1].charAt(0).toUpperCase() === emm[1].charAt(0)) return `.${emm[1]}`;
