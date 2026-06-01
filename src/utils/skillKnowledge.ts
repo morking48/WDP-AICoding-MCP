@@ -608,7 +608,7 @@ const uniqueMatchedSkills = [...new Set(matchedSkills)];
   workflowSteps.push('Step 2: 用 force_full: true 逐个读取 matched_skills 中所有 Skill 文件');
   workflowSteps.push('Step 3: 调用 enforce_routing_check 验证文件读取完整性');
   workflowSteps.push('Step 4: 编码');
-  workflowSteps.push('Step 5: 调用 trigger_self_evaluation 传入 generated_code + used_skills');
+  workflowSteps.push('Step 5: 调用 trigger_self_evaluation 传入 generated_code + used_skills + scenario_id（从 workflow_result.scene.id 获取）');
   // 8. 构建 guidance（注入后果前置 + API 白名单提示）
   const sceneGuidance = scene
     ? `🎯 当前场景：${scene.name} — ${scene.goal}\n`
@@ -787,6 +787,66 @@ function extractApiCallsFromCode(code: string): Array<{ line: number; api: strin
   return results;
 }
 
+// ========== API 参数提取 & 校验（trigger_self_evaluation 硬校验3） ==========
+
+/**
+ * 从一行代码中解析 WDP API 调用的对象参数 key
+ * 示例：App.Scene.SetWeather({ weather: 'Rain' }) → ['weather']
+ */
+function extractParamKeysFromLine(line: string): string[] {
+  const keys: string[] = [];
+  const objMatch = line.match(/\(\s*\{([^}]*)\}\s*\)/);
+  if (!objMatch) return keys;
+  const objContent = objMatch[1];
+  const keyPattern = /(?:^|,)\s*(?:['"])?(\w+)(?:['"])?\s*:/g;
+  let m;
+  while ((m = keyPattern.exec(objContent)) !== null) {
+    keys.push(m[1]);
+  }
+  return keys;
+}
+
+interface ParamIssue {
+  line: number; api: string;
+  hallucinatedKeys: string[]; missingKeys: string[]; expectedKeys: string[];
+  rawLine: string;
+}
+
+function validateApiParams(
+  generatedCode: string,
+  scenarioApiFlows: Array<{ step: number; description: string; api: string; params: Record<string, any> }>,
+): { passed: boolean; issues: ParamIssue[]; totalChecks: number } {
+  const lines = generatedCode.split('\n');
+  const codeCalls: Array<{ line: number; api: string; paramKeys: string[]; rawLine: string }> = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    for (const call of extractApiCallsFromCode(line)) {
+      codeCalls.push({ line: call.line, api: call.api, paramKeys: extractParamKeysFromLine(line), rawLine: line.trim() });
+    }
+  }
+
+  const issues: ParamIssue[] = [];
+  let totalChecks = 0;
+  for (const step of scenarioApiFlows) {
+    const apiNames = (step.api || '').split('+').map(a => a.trim());
+    const expectedKeys = Object.keys(step.params || {});
+    if (expectedKeys.length === 0) continue;
+    for (const apiName of apiNames) {
+      const extracted = extractApiName(apiName);
+      if (!extracted) continue;
+      for (const call of codeCalls.filter(c => c.api === extracted)) {
+        totalChecks++;
+        const hallucinated = call.paramKeys.filter(k => !expectedKeys.includes(k));
+        const missing = expectedKeys.filter(k => !call.paramKeys.includes(k));
+        if (hallucinated.length > 0 || missing.length > 0) {
+          issues.push({ line: call.line, api: call.api, hallucinatedKeys: hallucinated, missingKeys: missing, expectedKeys, rawLine: call.rawLine });
+        }
+      }
+    }
+  }
+  return { passed: issues.length === 0, issues, totalChecks };
+}
+
 /**
  * 主校验函数：对比代码中的 API 与 Skill 白名单
  */
@@ -908,7 +968,7 @@ const MCP_TOOL_DEFINITIONS: McpToolDef[] = [
   },
   {
     name: 'trigger_self_evaluation',
-    description: '🚨 防幻觉门禁2（编码后）：将生成的代码传入，MCP 提取所有 API 调用并与 Skill 白名单做存在性比对。不在白名单的 API 将被阻断。历史上出现过仅通过门禁1仍编造 FocusByEntityName 等幻觉 API 的案例，门禁2是必需的。',
+    description: '🚨 防幻觉门禁2（编码后）：将生成的代码传入，MCP 做三层硬校验：① API 白名单存在性比对 ② 场景步骤覆盖检查 ③ 参数 key 合法性检查（对比 api_flow.params）。任何一层不通过将被阻断。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -998,7 +1058,7 @@ case 'list_skills': {
       let nextStep: string;
       if (passed) {
         message = '✅ 文件完整性校验通过。⚠️ 门禁1仅验证文件是否已读取，不能保证不会编造幻觉 API。编码前仍需逐行对照 Skill 白名单。编码后务必调用 trigger_self_evaluation 做 API 白名单终检。';
-        nextStep = '🔜 编码完成后，调用 trigger_self_evaluation，传入 generated_code（完整代码文本）和 used_skills（从 workflow_result.matched_skills 获取）。';
+        nextStep = '🔜 编码完成后，调用 trigger_self_evaluation，传入 generated_code、used_skills、scenario_id（从 workflow_result.scene.id 获取，用于参数校验）。';
       } else {
         const issues: string[] = [];
         if (notRead.length > 0) issues.push(`${notRead.length} 个 Skill 未读取: ${notRead.join(', ')}`);
@@ -1031,17 +1091,16 @@ case 'list_skills': {
       let apiCheckResult: { passed: boolean; hallucinated: HallucinatedApi[]; totalApis: number; whitelistSize: number } | null = null;
       // 硬校验2：场景 api_flow 步骤覆盖检查
       let stepCoverage: { passed: boolean; missing_steps: Array<{ step: number; description: string; api: string }>; total_steps: number } | null = null;
+      // 硬校验3：API 参数 key 合法性检查
+      let paramCheckResult: { passed: boolean; issues: ParamIssue[]; totalChecks: number } | null = null;
 
       if (generatedCode && usedSkills.length > 0) {
-        // 如果传了 scenario_id，加载场景详情
         let sceneApiList: string[] = [];
         let sceneApiFlow: SceneDetail['api_flow'] | undefined;
         const scenarioId = (args.scenario_id as string) || '';
         if (scenarioId) {
           const sd = loadSceneDetail(scenarioId);
-          if (sd?.modules) {
-            for (const m of sd.modules) sceneApiList.push(...m.wdp_apis);
-          }
+          if (sd?.modules) for (const m of sd.modules) sceneApiList.push(...m.wdp_apis);
           sceneApiFlow = sd?.api_flow;
         }
         try {
@@ -1051,30 +1110,20 @@ case 'list_skills': {
           console.error(`[trigger_self_evaluation] API 校验异常: ${e.message}`);
         }
 
-        // 步骤覆盖检查：逐 step 验证代码中是否包含对应 API
         if (sceneApiFlow && sceneApiFlow.length > 0) {
           const usedApiNames = extractApiCallsFromCode(generatedCode).map(a => a.api);
           const missingSteps: Array<{ step: number; description: string; api: string }> = [];
           for (const s of sceneApiFlow) {
-            // 提取 api 字段中的方法名（如 "new App.Path({...})" → "App.Path"）
             const apiNames = (s.api || '').split('+').map(a => a.trim());
-            const found = apiNames.some(name => {
-              const extracted = extractApiName(name);
-              return extracted ? usedApiNames.includes(extracted) : false;
-            });
-            if (!found) {
-              missingSteps.push({ step: s.step, description: s.description, api: s.api });
-            }
+            const found = apiNames.some(name => { const e = extractApiName(name); return e ? usedApiNames.includes(e) : false; });
+            if (!found) missingSteps.push({ step: s.step, description: s.description, api: s.api });
           }
-          stepCoverage = {
-            passed: missingSteps.length === 0,
-            missing_steps: missingSteps,
-            total_steps: sceneApiFlow.length,
-          };
+          stepCoverage = { passed: missingSteps.length === 0, missing_steps: missingSteps, total_steps: sceneApiFlow.length };
+          paramCheckResult = validateApiParams(generatedCode, sceneApiFlow);
         }
       }
 
-      // SDK 版本比对：逐功能检查 Skill 版本要求是否超过用户 SDK 版本
+      // SDK 版本比对
       let sdkVersionWarnings: string[] = [];
       const sdkVer = (args.sdk_version as string) || '';
       if (sdkVer && usedSkills.length > 0) {
@@ -1090,77 +1139,74 @@ case 'list_skills': {
                 if ((req[i] || 0) > (sdk[i] || 0)) { isOk = false; break; }
                 if ((req[i] || 0) < (sdk[i] || 0)) break;
               }
-              if (!isOk) {
-                sdkVersionWarnings.push(`⚠️ ${sp} 中 ${feature} 需要 WDP API >= ${minVersion}，当前工程 SDK 版本为 ${sdkVer}`);
-              }
+              if (!isOk) sdkVersionWarnings.push(`⚠️ ${sp} 中 ${feature} 需要 WDP API >= ${minVersion}，当前工程 SDK 版本为 ${sdkVer}`);
             }
           } catch { /* skip */ }
         }
       }
 
-      // 软检查（仅保留不重复的 4 条）
       const checks = [
         '🔍 占位符检查：确认代码中无 YOUR_URL、YOUR_TOKEN 等假值',
         '🔍 生命周期检查：确认初始化 → 渲染 → 清理的完整链路',
         '🔍 初始化顺序检查：Plugin.Install 在 Renderer.Start 之前',
         '🔍 工程基线检查：确认使用 npm install wdpapi（非 CDN）',
-];
+      ];
 
-
-      // 构建最终结果
       const apiPassed = apiCheckResult ? apiCheckResult.passed : true;
       const hallucinated = apiCheckResult ? apiCheckResult.hallucinated : [];
       const stepPassed = stepCoverage ? stepCoverage.passed : true;
+      const paramPassed = paramCheckResult ? paramCheckResult.passed : true;
 
-      if ((!apiPassed || !stepPassed) && apiCheckResult) {
+      if ((!apiPassed || !stepPassed || !paramPassed) && apiCheckResult) {
         const errors: string[] = [];
-        if (!apiPassed) {
-          errors.push(...hallucinated.map(h => `  Line ${h.line}: ${h.api} → ${h.suggestion}`));
-        }
+        if (!apiPassed) errors.push(...hallucinated.map(h => `  Line ${h.line}: ${h.api} → ${h.suggestion}`));
         if (!stepPassed && stepCoverage) {
           errors.push(`\n⚠️ 场景步骤缺失 (${stepCoverage.missing_steps.length}/${stepCoverage.total_steps}):`);
           errors.push(...stepCoverage.missing_steps.map(s => `  Step ${s.step}: ${s.description} → 缺少 ${s.api}`));
+        }
+        if (!paramPassed && paramCheckResult) {
+          errors.push(`\n🚨 API 参数校验失败 (${paramCheckResult.issues.length} 处):`);
+          for (const issue of paramCheckResult.issues) {
+            const parts = [`  Line ${issue.line}: ${issue.api}()`];
+            if (issue.hallucinatedKeys.length) parts.push(`非法字段 ${issue.hallucinatedKeys.map(k => `"${k}"`).join(', ')}（期望: ${issue.expectedKeys.join(', ')}）`);
+            if (issue.missingKeys.length) parts.push(`缺少字段 ${issue.missingKeys.map(k => `"${k}"`).join(', ')}`);
+            errors.push(parts.join(' | '));
+          }
         }
 
         return {
           passed: false,
           api_whitelist_check: {
-            passed: apiPassed,
-            total_apis_found: apiCheckResult.totalApis,
-            whitelist_size: apiCheckResult.whitelistSize,
+            passed: apiPassed, total_apis_found: apiCheckResult.totalApis, whitelist_size: apiCheckResult.whitelistSize,
             hallucinated_apis: hallucinated,
             message: apiPassed ? '✅ 白名单通过' : `🚨 发现 ${hallucinated.length} 个不在任何 Skill 文件中的 API`,
           },
           step_coverage_check: stepCoverage ? {
-            passed: stepCoverage.passed,
-            total_steps: stepCoverage.total_steps,
-            missing_steps: stepCoverage.missing_steps,
-} : null,
-          sdk_version_warnings: sdkVersionWarnings,
-          soft_checks: checks,
-          written_files: writtenFiles,
-          used_skills: usedSkills,
+            passed: stepCoverage.passed, total_steps: stepCoverage.total_steps, missing_steps: stepCoverage.missing_steps,
+          } : null,
+          param_check: paramCheckResult ? {
+            passed: paramCheckResult.passed, total_checks: paramCheckResult.totalChecks, issues: paramCheckResult.issues,
+          } : null,
+          sdk_version_warnings: sdkVersionWarnings, soft_checks: checks, written_files: writtenFiles, used_skills: usedSkills,
           message: [`🚨 校验未通过，请修正以下问题后重新调用 trigger_self_evaluation：`, ...errors].join('\n'),
         };
       }
 
-return {
+      return {
         passed: true,
         api_whitelist_check: {
-          passed: true,
-          total_apis_found: apiCheckResult?.totalApis || 0,
-          whitelist_size: apiCheckResult?.whitelistSize || 0,
+          passed: true, total_apis_found: apiCheckResult?.totalApis || 0, whitelist_size: apiCheckResult?.whitelistSize || 0,
           message: '✅ 所有 API 调用均在 Skill 白名单中',
         },
         step_coverage_check: stepCoverage ? {
-          passed: true,
-          total_steps: stepCoverage.total_steps,
+          passed: true, total_steps: stepCoverage.total_steps,
           message: `✅ 全部 ${stepCoverage.total_steps} 个场景步骤已覆盖`,
         } : null,
-        sdk_version_warnings: sdkVersionWarnings,
-        soft_checks: checks,
-        written_files: writtenFiles,
-        used_skills: usedSkills,
+        param_check: paramCheckResult ? {
+          passed: true, total_checks: paramCheckResult.totalChecks,
+          message: `✅ 全部 ${paramCheckResult.totalChecks} 处 API 参数校验通过`,
+        } : null,
+        sdk_version_warnings: sdkVersionWarnings, soft_checks: checks, written_files: writtenFiles, used_skills: usedSkills,
         hint: '✅ 硬校验通过。请逐项检查以上 4 条软检查，发现问题立即修正。',
       };
     }
