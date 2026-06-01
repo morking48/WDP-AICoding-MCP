@@ -726,15 +726,23 @@ function extractApiFromSkillContent(content: string): Set<string> {
  * 从 api_flow 的 api 字符串中提取标准化 API 名
  * "new App.Path({...})" → "App.Path"
  * "App.CameraControl.UpdateCamera" → "App.CameraControl.UpdateCamera"
+ * "App.Scene.SetWeather" → "App.Scene.SetWeather"
  * "entityObj.Delete()" → ".Delete"
+ * 裸方法名（无括号）也支持，直接返回
  */
 function extractApiName(apiStr: string): string | null {
   // new App.Xxx( → App.Xxx
   const cm = apiStr.match(/new\s+(App\.\w+)\s*\(/);
   if (cm) return cm[1];
+  // new App.Xxx（无括号构造）
+  const cmBare = apiStr.match(/new\s+(App\.\w+)/);
+  if (cmBare) return cmBare[1];
   // App.Xxx.Yyy( → App.Xxx.Yyy
   const smm = apiStr.match(/(App\.\w+(?:\.\w+)+)\s*\(/);
   if (smm) return smm[1];
+  // App.Xxx.Yyy（无括号静态方法）
+  const smmBare = apiStr.match(/(App\.\w+(?:\.\w+)+)/);
+  if (smmBare) return smmBare[1];
   // obj.method( → .Method
   const emm = apiStr.match(/\.(\w+)\s*\(/);
   if (emm && emm[1].charAt(0).toUpperCase() === emm[1].charAt(0)) return `.${emm[1]}`;
@@ -777,6 +785,117 @@ function extractApiCallsFromCode(code: string): Array<{ line: number; api: strin
   }
 
   return results;
+}
+
+// ========== API 参数提取 & 校验（用于 trigger_self_evaluation 硬校验2） ==========
+
+interface ApiCallDetail {
+  line: number;
+  api: string;
+  paramKeys: string[];   // 对象参数的 key 列表（如 {weather, time}），空数组表示无对象参数或未识别
+  rawLine: string;        // 原始代码行，用于报错定位
+}
+
+/**
+ * 从一行代码中解析 WDP API 调用的对象参数 key
+ * 示例：App.Scene.SetWeather({ weather: 'Rain' }) → ['weather']
+ *       entity.SetDistance({ distance: 500 }) → ['distance']
+ */
+function extractParamKeysFromLine(line: string): string[] {
+  const keys: string[] = [];
+  // 匹配函数调用后的对象参数：({ key1: val1, key2: val2 })
+  const objMatch = line.match(/\(\s*\{([^}]*)\}\s*\)/);
+  if (!objMatch) return keys;
+
+  const objContent = objMatch[1];
+  // 逐项提取 key（key 后跟冒号，key 可选引号包裹）
+  const keyPattern = /(?:^|,)\s*(?:['"])?(\w+)(?:['"])?\s*:/g;
+  let m;
+  while ((m = keyPattern.exec(objContent)) !== null) {
+    keys.push(m[1]);
+  }
+  return keys;
+}
+
+/**
+ * 参数校验结果
+ */
+interface ParamIssue {
+  line: number;
+  api: string;
+  hallucinatedKeys: string[];   // AI 编造的、不在 api_flow 中的参数 key
+  missingKeys: string[];        // api_flow 要求但 AI 未传入的参数 key
+  expectedKeys: string[];        // api_flow 中定义的参数 key
+  rawLine: string;
+}
+
+/**
+ * 将场景 api_flow 中的 params 与 AI 代码中的实际参数对比
+ * @param generatedCode AI 生成的完整代码文本
+ * @param scenarioApiFlows 场景 api_flow 数组（含 params 字段）
+ * @returns 参数校验结果
+ */
+function validateApiParams(
+  generatedCode: string,
+  scenarioApiFlows: Array<{ step: number; description: string; api: string; params: Record<string, any> }>,
+): { passed: boolean; issues: ParamIssue[]; totalChecks: number } {
+  const lines = generatedCode.split('\n');
+  const issues: ParamIssue[] = [];
+  let totalChecks = 0;
+
+  // 第一步：从代码中提取所有带参数的 API 调用
+  const codeCalls: ApiCallDetail[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const calls = extractApiCallsFromCode(line);
+    for (const call of calls) {
+      const paramKeys = extractParamKeysFromLine(line);
+      codeCalls.push({
+        line: call.line,
+        api: call.api,
+        paramKeys,
+        rawLine: line.trim(),
+      });
+    }
+  }
+
+  // 第二步：对每个 api_flow 步骤，找到对应的代码调用并对比参数
+  for (const step of scenarioApiFlows) {
+    // 提取 api_flow 步骤中定义的 API 方法名
+    const apiNames = (step.api || '').split('+').map(a => a.trim());
+    const expectedParamKeys = Object.keys(step.params || {});
+
+    if (expectedParamKeys.length === 0) {
+      // params 为空 → 不需要参数校验（如无参构造 new App.Path()）
+      continue;
+    }
+
+    // 在代码中找匹配的 API 调用
+    for (const apiName of apiNames) {
+      const extractResult = extractApiName(apiName);
+      if (!extractResult) continue;
+
+      const matchedCalls = codeCalls.filter(c => c.api === extractResult);
+      for (const call of matchedCalls) {
+        totalChecks++;
+        const hallucinated = call.paramKeys.filter(k => !expectedParamKeys.includes(k));
+        const missing = expectedParamKeys.filter(k => !call.paramKeys.includes(k));
+
+        if (hallucinated.length > 0 || missing.length > 0) {
+          issues.push({
+            line: call.line,
+            api: call.api,
+            hallucinatedKeys: hallucinated,
+            missingKeys: missing,
+            expectedKeys: expectedParamKeys,
+            rawLine: call.rawLine,
+          });
+        }
+      }
+    }
+  }
+
+  return { passed: issues.length === 0, issues, totalChecks };
 }
 
 /**
@@ -900,7 +1019,7 @@ const MCP_TOOL_DEFINITIONS: McpToolDef[] = [
   },
   {
     name: 'trigger_self_evaluation',
-    description: '🚨 防幻觉门禁2（编码后）：将生成的代码传入，MCP 提取所有 API 调用并与 Skill 白名单做存在性比对。不在白名单的 API 将被阻断。历史上出现过仅通过门禁1仍编造 FocusByEntityName 等幻觉 API 的案例，门禁2是必需的。',
+    description: '🚨 防幻觉门禁2（编码后）：将生成的代码传入，MCP 提取所有 API 调用并与 Skill 白名单做存在性比对，同时校验参数 key 是否与场景 api_flow 一致。不在白名单的 API 名或编造的参数字段将被阻断。历史上出现过仅通过门禁1仍编造 FocusByEntityName 等幻觉 API 的案例，门禁2是必需的。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1023,6 +1142,8 @@ case 'list_skills': {
       let apiCheckResult: { passed: boolean; hallucinated: HallucinatedApi[]; totalApis: number; whitelistSize: number } | null = null;
       // 硬校验2：场景 api_flow 步骤覆盖检查
       let stepCoverage: { passed: boolean; missing_steps: Array<{ step: number; description: string; api: string }>; total_steps: number } | null = null;
+      // 硬校验3：API 参数合法性检查（对比 api_flow 中的 params 与 AI 代码中的实际参数 key）
+      let paramCheckResult: { passed: boolean; issues: ParamIssue[]; totalChecks: number } | null = null;
 
       if (generatedCode && usedSkills.length > 0) {
         // 如果传了 scenario_id，加载场景详情
@@ -1063,6 +1184,9 @@ case 'list_skills': {
             missing_steps: missingSteps,
             total_steps: sceneApiFlow.length,
           };
+
+          // 参数校验：逐 API 调用对比参数 key（api_flow.params vs 代码中的实际参数）
+          paramCheckResult = validateApiParams(generatedCode, sceneApiFlow);
         }
       }
 
@@ -1103,8 +1227,9 @@ case 'list_skills': {
       const apiPassed = apiCheckResult ? apiCheckResult.passed : true;
       const hallucinated = apiCheckResult ? apiCheckResult.hallucinated : [];
       const stepPassed = stepCoverage ? stepCoverage.passed : true;
+      const paramPassed = paramCheckResult ? paramCheckResult.passed : true;
 
-      if ((!apiPassed || !stepPassed) && apiCheckResult) {
+      if ((!apiPassed || !stepPassed || !paramPassed) && apiCheckResult) {
         const errors: string[] = [];
         if (!apiPassed) {
           errors.push(...hallucinated.map(h => `  Line ${h.line}: ${h.api} → ${h.suggestion}`));
@@ -1112,6 +1237,20 @@ case 'list_skills': {
         if (!stepPassed && stepCoverage) {
           errors.push(`\n⚠️ 场景步骤缺失 (${stepCoverage.missing_steps.length}/${stepCoverage.total_steps}):`);
           errors.push(...stepCoverage.missing_steps.map(s => `  Step ${s.step}: ${s.description} → 缺少 ${s.api}`));
+        }
+        if (!paramPassed && paramCheckResult) {
+          errors.push(`\n🚨 API 参数校验失败 (${paramCheckResult.issues.length} 处):`);
+          for (const issue of paramCheckResult.issues) {
+            const parts: string[] = [];
+            parts.push(`  Line ${issue.line}: ${issue.api}()`);
+            if (issue.hallucinatedKeys.length > 0) {
+              parts.push(`非法字段 ${issue.hallucinatedKeys.map(k => `"${k}"`).join(', ')}（期望: ${issue.expectedKeys.join(', ')}）`);
+            }
+            if (issue.missingKeys.length > 0) {
+              parts.push(`缺少字段 ${issue.missingKeys.map(k => `"${k}"`).join(', ')}`);
+            }
+            errors.push(parts.join(' | '));
+          }
         }
 
         return {
@@ -1127,7 +1266,12 @@ case 'list_skills': {
             passed: stepCoverage.passed,
             total_steps: stepCoverage.total_steps,
             missing_steps: stepCoverage.missing_steps,
-} : null,
+          } : null,
+          param_check: paramCheckResult ? {
+            passed: paramCheckResult.passed,
+            total_checks: paramCheckResult.totalChecks,
+            issues: paramCheckResult.issues,
+          } : null,
           sdk_version_warnings: sdkVersionWarnings,
           soft_checks: checks,
           written_files: writtenFiles,
@@ -1136,7 +1280,7 @@ case 'list_skills': {
         };
       }
 
-return {
+      return {
         passed: true,
         api_whitelist_check: {
           passed: true,
@@ -1148,6 +1292,11 @@ return {
           passed: true,
           total_steps: stepCoverage.total_steps,
           message: `✅ 全部 ${stepCoverage.total_steps} 个场景步骤已覆盖`,
+        } : null,
+        param_check: paramCheckResult ? {
+          passed: true,
+          total_checks: paramCheckResult.totalChecks,
+          message: `✅ 全部 ${paramCheckResult.totalChecks} 处 API 参数校验通过`,
         } : null,
         sdk_version_warnings: sdkVersionWarnings,
         soft_checks: checks,
