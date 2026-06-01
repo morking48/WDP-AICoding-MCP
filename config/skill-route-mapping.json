@@ -20,7 +20,10 @@
                 "初始化",
                 "scene-init"
             ],
-            "pathSegments": ["initialization", "init"],
+            "pathSegments": [
+                "initialization",
+                "init"
+            ],
             "relatedSkills": []
         },
         {
@@ -39,7 +42,9 @@
                 "renderer",
                 "渲染器"
             ],
-            "pathSegments": ["renderer"],
+            "pathSegments": [
+                "renderer"
+            ],
             "relatedSkills": []
         },
         {
@@ -61,7 +66,13 @@
                 "camera-control",
                 "flyto"
             ],
-            "pathSegments": ["camera", "camera-control", "camera-start", "camera-roams", "camera-preset"],
+            "pathSegments": [
+                "camera",
+                "camera-control",
+                "camera-start",
+                "camera-roams",
+                "camera-preset"
+            ],
             "relatedSkills": [
                 "reference/camera/camera-start/SKILL.md",
                 "reference/camera/camera-roams/SKILL.md",
@@ -89,12 +100,28 @@
                 "天气"
             ],
             "userSynonyms": [
-                "下雨", "雨", "雪", "晴天", "阴天", "多云",
-                "早上", "傍晚", "夜晚", "中午", "黄昏",
-                "雾天", "起雾", "雾霾",
-                "换天", "改时间", "调天气", "改变环境"
+                "下雨",
+                "雨",
+                "雪",
+                "晴天",
+                "阴天",
+                "多云",
+                "早上",
+                "傍晚",
+                "夜晚",
+                "中午",
+                "黄昏",
+                "雾天",
+                "起雾",
+                "雾霾",
+                "换天",
+                "改时间",
+                "调天气",
+                "改变环境"
             ],
-            "pathSegments": ["environment"],
+            "pathSegments": [
+                "environment"
+            ],
             "relatedSkills": [],
             "sceneId": "scene-environment-control"
         },
@@ -112,7 +139,10 @@
                 "poi",
                 "点位"
             ],
-            "pathSegments": ["poi", "custom-poi"],
+            "pathSegments": [
+                "poi",
+                "custom-poi"
+            ],
             "relatedSkills": [
                 "reference/scene/covering/custom-poi/SKILL.md"
             ],
@@ -133,12 +163,25 @@
                 "路径"
             ],
             "userSynonyms": [
-                "线", "线条", "画线", "画", "绘制", "划线",
-                "连线", "折线", "polyline",
-                "路线", "轨迹", "route", "track",
-                "标注线", "指引线"
+                "线",
+                "线条",
+                "画线",
+                "画",
+                "绘制",
+                "划线",
+                "连线",
+                "折线",
+                "polyline",
+                "路线",
+                "轨迹",
+                "route",
+                "track",
+                "标注线",
+                "指引线"
             ],
-            "pathSegments": ["path"],
+            "pathSegments": [
+                "path"
+            ],
             "relatedSkills": [],
             "sceneId": "ai-dog-patrol-combo"
         },
@@ -156,7 +199,9 @@
                 "window",
                 "浮窗"
             ],
-            "pathSegments": ["window"],
+            "pathSegments": [
+                "window"
+            ],
             "relatedSkills": []
         },
         {
@@ -174,12 +219,25 @@
                 "区域"
             ],
             "userSynonyms": [
-                "圈", "画圈", "圈地", "围栏", "电子围栏",
-                "区域", "多边形", "polygon", "边框",
-                "边界", "boundary", "安全区", "警戒区",
-                "围墙", "围挡"
+                "圈",
+                "画圈",
+                "圈地",
+                "围栏",
+                "电子围栏",
+                "区域",
+                "多边形",
+                "polygon",
+                "边框",
+                "边界",
+                "boundary",
+                "安全区",
+                "警戒区",
+                "围墙",
+                "围挡"
             ],
-            "pathSegments": ["range"],
+            "pathSegments": [
+                "range"
+            ],
             "relatedSkills": [],
             "sceneId": "emergency-command"
         },
@@ -198,7 +256,9 @@
                 "text3d",
                 "3d文字"
             ],
-            "pathSegments": ["text3d"],
+            "pathSegments": [
+                "text3d"
+            ],
             "relatedSkills": []
         },
         {
@@ -215,7 +275,9 @@
                 "light",
                 "灯光"
             ],
-            "pathSegments": ["light"],
+            "pathSegments": [
+                "light"
+            ],
             "relatedSkills": []
         },
         {
@@ -231,7 +293,9 @@
                 "particle",
                 "粒子"
             ],
-            "pathSegments": ["particle"],
+            "pathSegments": [
+                "particle"
+            ],
             "relatedSkills": []
         },
         {
@@ -246,7 +310,9 @@
                 "highlight-area",
                 "高亮区域"
             ],
-            "pathSegments": ["highlight-area"],
+            "pathSegments": [
+                "highlight-area"
+            ],
             "relatedSkills": []
         },
         {
@@ -264,7 +330,13 @@
                 "heatmap",
                 "热力图"
             ],
-            "pathSegments": ["heatmap", "columnar-heatmap", "mesh-heatmap", "road-heatmap", "space-heatmap"],
+            "pathSegments": [
+                "heatmap",
+                "columnar-heatmap",
+                "mesh-heatmap",
+                "road-heatmap",
+                "space-heatmap"
+            ],
             "relatedSkills": [
                 "reference/scene/covering/columnar-heatmap/SKILL.md",
                 "reference/scene/covering/mesh-heatmap/SKILL.md",
@@ -285,7 +357,9 @@
                 "viewshed",
                 "可视域"
             ],
-            "pathSegments": ["viewshed"],
+            "pathSegments": [
+                "viewshed"
+            ],
             "relatedSkills": []
         },
         {
@@ -301,7 +375,9 @@
                 "parabola",
                 "抛物线"
             ],
-            "pathSegments": ["parabola"],
+            "pathSegments": [
+                "parabola"
+            ],
             "relatedSkills": []
         },
         {
@@ -317,7 +393,9 @@
                 "raster",
                 "栅格"
             ],
-            "pathSegments": ["raster"],
+            "pathSegments": [
+                "raster"
+            ],
             "relatedSkills": []
         },
         {
@@ -333,7 +411,9 @@
                 "real-time-video",
                 "实时视频"
             ],
-            "pathSegments": ["real-time-video"],
+            "pathSegments": [
+                "real-time-video"
+            ],
             "relatedSkills": []
         },
         {
@@ -349,7 +429,9 @@
                 "bound",
                 "路径移动"
             ],
-            "pathSegments": ["bound"],
+            "pathSegments": [
+                "bound"
+            ],
             "relatedSkills": [],
             "sceneId": "ai-dog-patrol-combo"
         },
@@ -366,7 +448,9 @@
                 "effects",
                 "特效"
             ],
-            "pathSegments": ["effects"],
+            "pathSegments": [
+                "effects"
+            ],
             "relatedSkills": []
         },
         {
@@ -382,7 +466,9 @@
                 "section",
                 "剖切"
             ],
-            "pathSegments": ["section"],
+            "pathSegments": [
+                "section"
+            ],
             "relatedSkills": []
         },
         {
@@ -399,15 +485,42 @@
                 "静态模型"
             ],
             "userSynonyms": [
-                "车", "汽车", "车辆", "car", "vehicle",
-                "房子", "建筑", "building", "楼",
-                "路灯", "灯杆", "护栏", "垃圾桶", "消防栓",
-                "桌子", "椅子", "家具", "沙发", "办公桌",
-                "雕塑", "雕像", "喷泉",
-                "放", "摆", "放置", "摆放", "增加", "添加",
-                "物体", "物件", "模型"
+                "车",
+                "汽车",
+                "车辆",
+                "car",
+                "vehicle",
+                "房子",
+                "建筑",
+                "building",
+                "楼",
+                "路灯",
+                "灯杆",
+                "护栏",
+                "垃圾桶",
+                "消防栓",
+                "桌子",
+                "椅子",
+                "家具",
+                "沙发",
+                "办公桌",
+                "雕塑",
+                "雕像",
+                "喷泉",
+                "放",
+                "摆",
+                "放置",
+                "摆放",
+                "增加",
+                "添加",
+                "物体",
+                "物件",
+                "模型"
             ],
-            "pathSegments": ["static", "static-model"],
+            "pathSegments": [
+                "static",
+                "static-model"
+            ],
             "relatedSkills": [
                 "reference/scene/model/static-instance/SKILL.md"
             ]
@@ -426,12 +539,28 @@
                 "骨骼动画"
             ],
             "userSynonyms": [
-                "人", "人物", "行人", "角色", "character",
-                "动物", "狗", "cat", "巡逻犬", "机器狗",
-                "动画", "动作", "走动", "跑步", "行走",
-                "骨骼", "蒙皮", "skin"
+                "人",
+                "人物",
+                "行人",
+                "角色",
+                "character",
+                "动物",
+                "狗",
+                "cat",
+                "巡逻犬",
+                "机器狗",
+                "动画",
+                "动作",
+                "走动",
+                "跑步",
+                "行走",
+                "骨骼",
+                "蒙皮",
+                "skin"
             ],
-            "pathSegments": ["skeletal"],
+            "pathSegments": [
+                "skeletal"
+            ],
             "relatedSkills": []
         },
         {
@@ -449,13 +578,29 @@
                 "植被"
             ],
             "userSynonyms": [
-                "树", "树木", "tree", "植被",
-                "草", "草地", "草坪", "灌木", "灌木丛",
-                "花", "花卉", "花丛", "植物",
-                "种", "栽", "种植", "绿化",
-                "森林", "林地"
+                "树",
+                "树木",
+                "tree",
+                "植被",
+                "草",
+                "草地",
+                "草坪",
+                "灌木",
+                "灌木丛",
+                "花",
+                "花卉",
+                "花丛",
+                "植物",
+                "种",
+                "栽",
+                "种植",
+                "绿化",
+                "森林",
+                "林地"
             ],
-            "pathSegments": ["vegetation"],
+            "pathSegments": [
+                "vegetation"
+            ],
             "relatedSkills": []
         },
         {
@@ -471,7 +616,10 @@
                 "project-model",
                 "工程模型"
             ],
-            "pathSegments": ["project-model", "project-instance"],
+            "pathSegments": [
+                "project-model",
+                "project-instance"
+            ],
             "relatedSkills": [
                 "reference/scene/model/project-instance/SKILL.md"
             ]
@@ -494,7 +642,15 @@
                 "modeler",
                 "建模"
             ],
-            "pathSegments": ["modeler-embank", "modeler-fence", "modeler-floor", "modeler-river", "modeler-water", "wim-modeler-river", "wim-modeler-water"],
+            "pathSegments": [
+                "modeler-embank",
+                "modeler-fence",
+                "modeler-floor",
+                "modeler-river",
+                "modeler-water",
+                "wim-modeler-river",
+                "wim-modeler-water"
+            ],
             "relatedSkills": [
                 "reference/scene/model/modeler-fence/SKILL.md",
                 "reference/scene/model/modeler-floor/SKILL.md",
@@ -522,7 +678,15 @@
                 "scene",
                 "场景管理"
             ],
-            "pathSegments": ["scene", "tiles", "earth-tiles", "node", "group", "project", "node-selection"],
+            "pathSegments": [
+                "scene",
+                "tiles",
+                "earth-tiles",
+                "node",
+                "group",
+                "project",
+                "node-selection"
+            ],
             "relatedSkills": [
                 "reference/scene/tiles/SKILL.md",
                 "reference/scene/earth-tiles/SKILL.md",
@@ -549,7 +713,17 @@
                 "tools",
                 "工具"
             ],
-            "pathSegments": ["coordinate", "measure", "picker", "mini-map", "compass", "coord-aide", "picker-material", "picker-point", "picker-polyline"],
+            "pathSegments": [
+                "coordinate",
+                "measure",
+                "picker",
+                "mini-map",
+                "compass",
+                "coord-aide",
+                "picker-material",
+                "picker-point",
+                "picker-polyline"
+            ],
             "relatedSkills": [
                 "reference/tools/measure/SKILL.md",
                 "reference/tools/picker/SKILL.md",
@@ -574,7 +748,9 @@
                 "china-map",
                 "中国地图"
             ],
-            "pathSegments": ["china-map"],
+            "pathSegments": [
+                "china-map"
+            ],
             "relatedSkills": []
         },
         {
@@ -590,7 +766,9 @@
                 "color",
                 "颜色"
             ],
-            "pathSegments": ["color"],
+            "pathSegments": [
+                "color"
+            ],
             "relatedSkills": []
         },
         {
@@ -606,7 +784,9 @@
                 "move-linear",
                 "线性移动"
             ],
-            "pathSegments": ["move-linear"],
+            "pathSegments": [
+                "move-linear"
+            ],
             "relatedSkills": []
         },
         {
@@ -622,7 +802,9 @@
                 "screen",
                 "屏幕"
             ],
-            "pathSegments": ["screen"],
+            "pathSegments": [
+                "screen"
+            ],
             "relatedSkills": []
         },
         {
@@ -638,7 +820,9 @@
                 "shape",
                 "形状"
             ],
-            "pathSegments": ["shape"],
+            "pathSegments": [
+                "shape"
+            ],
             "relatedSkills": []
         },
         {
@@ -656,7 +840,15 @@
                 "data-model",
                 "数据模型"
             ],
-            "pathSegments": ["geometry", "material", "cluster", "asset-loader", "geo-reference", "local-geo-reference", "daas"],
+            "pathSegments": [
+                "geometry",
+                "material",
+                "cluster",
+                "asset-loader",
+                "geo-reference",
+                "local-geo-reference",
+                "daas"
+            ],
             "relatedSkills": [
                 "reference/data-model/material/SKILL.md",
                 "reference/data-model/cluster/SKILL.md",
@@ -682,7 +874,15 @@
                 "system",
                 "系统"
             ],
-            "pathSegments": ["system", "debug", "transaction", "plugin", "setting", "editor", "customize"],
+            "pathSegments": [
+                "system",
+                "debug",
+                "transaction",
+                "plugin",
+                "setting",
+                "editor",
+                "customize"
+            ],
             "relatedSkills": [
                 "reference/system/debug/SKILL.md",
                 "reference/system/transaction/SKILL.md",
@@ -706,7 +906,11 @@
                 "component",
                 "组件"
             ],
-            "pathSegments": ["window-ui", "poi-ui", "video-ui"],
+            "pathSegments": [
+                "window-ui",
+                "poi-ui",
+                "video-ui"
+            ],
             "relatedSkills": [
                 "reference/component/poi-ui/SKILL.md",
                 "reference/component/video-ui/SKILL.md"
@@ -730,7 +934,11 @@
                 "bim",
                 "bim-api"
             ],
-            "pathSegments": ["bimapi", "hierarchy", "dcp-save"],
+            "pathSegments": [
+                "bimapi",
+                "hierarchy",
+                "dcp-save"
+            ],
             "relatedSkills": [
                 "reference/system/plugin/bimapi/hierarchy/SKILL.md",
                 "reference/system/plugin/bimapi/dcp-save/SKILL.md"
@@ -754,7 +962,16 @@
                 "gis",
                 "gis-api"
             ],
-            "pathSegments": ["gisapi", "geolayer", "3dtiles", "wmts", "wms", "wfs", "gisvector", "gis-controller"],
+            "pathSegments": [
+                "gisapi",
+                "geolayer",
+                "3dtiles",
+                "wmts",
+                "wms",
+                "wfs",
+                "gisvector",
+                "gis-controller"
+            ],
             "relatedSkills": [
                 "reference/system/plugin/gisapi/geolayer/SKILL.md",
                 "reference/system/plugin/gisapi/3dtiles/SKILL.md",
@@ -782,7 +999,18 @@
                 "wim",
                 "wim-api"
             ],
-            "pathSegments": ["wimapi", "flood", "wim-pipe", "wim-dynamic-water", "dam-cae", "point-cloud-sim", "custom-color-card", "wim-controller", "wim-modeler-river-controller", "wim-modeler-water-controller"],
+            "pathSegments": [
+                "wimapi",
+                "flood",
+                "wim-pipe",
+                "wim-dynamic-water",
+                "dam-cae",
+                "point-cloud-sim",
+                "custom-color-card",
+                "wim-controller",
+                "wim-modeler-river-controller",
+                "wim-modeler-water-controller"
+            ],
             "relatedSkills": [
                 "reference/system/plugin/wimapi/flood/SKILL.md",
                 "reference/system/plugin/wimapi/wim-pipe/SKILL.md",
@@ -809,7 +1037,9 @@
                 "effects-assets",
                 "特效资源"
             ],
-            "pathSegments": ["effects-assets"],
+            "pathSegments": [
+                "effects-assets"
+            ],
             "relatedSkills": []
         },
         {
@@ -824,7 +1054,40 @@
                 "model-assets",
                 "模型资源"
             ],
-            "pathSegments": ["model-assets"],
+            "pathSegments": [
+                "model-assets"
+            ],
+            "relatedSkills": []
+        },
+        {
+            "domain": "animation",
+            "label": "实体动画控制",
+            "skillPath": "reference/animation/SKILL.md",
+            "keywords": [
+                "动画",
+                "animation",
+                "位移动画",
+                "旋转动画",
+                "缩放动画",
+                "自转动画",
+                "实体移动",
+                "缓动",
+                "关键帧",
+                "PlayLocationAnimation",
+                "PlayRotationAnimation",
+                "PlayScaleAnimation",
+                "PlaySelfRotationAnimation",
+                "自转",
+                "tween"
+            ],
+            "aliases": [
+                "animation",
+                "动画",
+                "entity-animation"
+            ],
+            "pathSegments": [
+                "animation"
+            ],
             "relatedSkills": []
         }
     ],
