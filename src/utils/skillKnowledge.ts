@@ -608,7 +608,7 @@ const uniqueMatchedSkills = [...new Set(matchedSkills)];
   workflowSteps.push('Step 2: 用 force_full: true 逐个读取 matched_skills 中所有 Skill 文件');
   workflowSteps.push('Step 3: 调用 enforce_routing_check 验证文件读取完整性');
   workflowSteps.push('Step 4: 编码');
-  workflowSteps.push('Step 5: 调用 trigger_self_evaluation 传入 generated_code + used_skills');
+  workflowSteps.push('Step 5: 调用 trigger_self_evaluation 传入 generated_code + used_skills + scenario_id（从 workflow_result.scene.id 获取）');
   // 8. 构建 guidance（注入后果前置 + API 白名单提示）
   const sceneGuidance = scene
     ? `🎯 当前场景：${scene.name} — ${scene.goal}\n`
@@ -1109,7 +1109,7 @@ case 'list_skills': {
       let nextStep: string;
       if (passed) {
         message = '✅ 文件完整性校验通过。⚠️ 门禁1仅验证文件是否已读取，不能保证不会编造幻觉 API。编码前仍需逐行对照 Skill 白名单。编码后务必调用 trigger_self_evaluation 做 API 白名单终检。';
-        nextStep = '🔜 编码完成后，调用 trigger_self_evaluation，传入 generated_code（完整代码文本）和 used_skills（从 workflow_result.matched_skills 获取）。';
+        nextStep = '🔜 编码完成后，调用 trigger_self_evaluation，传入 generated_code（完整代码文本）、used_skills（从 workflow_result.matched_skills 获取）、scenario_id（从 workflow_result.scene.id 获取）。';
       } else {
         const issues: string[] = [];
         if (notRead.length > 0) issues.push(`${notRead.length} 个 Skill 未读取: ${notRead.join(', ')}`);
