@@ -5,7 +5,7 @@
  * - 从远程 Skill Server 拉取 manifest + 文件内容
  * - 三级查找：内置 Skill → 内存缓存 → 远程拉取
  * - 路由引擎：关键词匹配 + 歧义消解 + 场景匹配 + buildWorkflowResponse
- * - 7 个 MCP 工具（含 enforce_routing_check + trigger_self_evaluation 防幻觉双门禁）
+ * - 6 个 MCP 工具（含 enforce_routing_check + trigger_self_evaluation 防幻觉双门禁，trigger_self_evaluation 含三层硬校验：API 名白名单 + 场景步骤覆盖 + 参数 key 合法性）
  */
 
 import crypto from 'crypto';
