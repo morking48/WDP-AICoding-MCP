@@ -124,11 +124,20 @@
           "location": "${highlightLocation}",
           "windowStyle": {
             "url": "bim_detail.html?floor=${floor}",
-            "size": [350, 400]
+            "size": [
+              350,
+              400
+            ]
           },
           "customId": "bim_detail_window"
         }
       }
+    },
+    {
+      "step": "可选扩展：楼宇爆炸图 + 单层下钻（非 BIM）",
+      "note": "如需逐层抬升爆炸视图（Hierarchy.SetLocation）+ 室内 Range/Poi/Text3D 标注 + 房间点击弹 Window，参考 reference/business-portfolio/building-explode/SKILL.md。本场景的 App.Bim.Split 是 BIM 专用层级拆分，与 SetLocation 几何位移互不替代。",
+      "api": "",
+      "params": {}
     }
   ],
   "data_flow": [
@@ -149,17 +158,31 @@
     }
   ],
   "cleanup_chain": [
-    {"create": "App.Bim.Split（或 SetVisible 实现的楼层突出）", "cleanup": "还原楼层可见性 / 官方 Reset（请对齐 official-bim-full.md，确认真实 API 名）"},
-    {"create": "App.Bim.Highlight（真实 entity.SetNodeHighLight）", "cleanup": "取消高亮（调用对应反操作，请对齐 official-bim-full.md）"},
-    {"create": "App.Scene.Add(Window)", "cleanup": "windowObj.Delete()"},
-    {"create": "App.CameraControl.SetCameraPose", "cleanup": "无需专门清理（可按需再次 SetCameraPose 复位）"}
+    {
+      "create": "App.Bim.Split（或 SetVisible 实现的楼层突出）",
+      "cleanup": "还原楼层可见性 / 官方 Reset（请对齐 official-bim-full.md，确认真实 API 名）"
+    },
+    {
+      "create": "App.Bim.Highlight（真实 entity.SetNodeHighLight）",
+      "cleanup": "取消高亮（调用对应反操作，请对齐 official-bim-full.md）"
+    },
+    {
+      "create": "App.Scene.Add(Window)",
+      "cleanup": "windowObj.Delete()"
+    },
+    {
+      "create": "App.CameraControl.SetCameraPose",
+      "cleanup": "无需专门清理（可按需再次 SetCameraPose 复位）"
+    }
   ],
   "cleanup_note": "退出楼层查看时必须执行楼层合拢/可见性还原、取消构件高亮，并清理 Window 实体",
   "pattern": {
     "type": "bim-exploration",
     "architecture": "camera-split-highlight-window",
     "data_flow": "sequential-drill-down",
-    "recommended_patterns": ["wdp-bim-building-split"],
+    "recommended_patterns": [
+      "wdp-bim-building-split"
+    ],
     "key_features": [
       "相机预定位到建筑",
       "楼层拆解炸裂动画",
@@ -168,5 +191,6 @@
       "退出时楼层合拢还原",
       "其它兜底处理"
     ]
-  }
+  },
+  "description": "⚠️ 适用场景：BIM 模型的楼层语义拆解（非通用模型爆炸图）。核心 API：App.Bim.Split（按楼层拆分）→ App.Bim.Highlight（构件高亮）。如需非 BIM 模型的逐层抬升爆炸效果，请参考 Skill 库 building-explode（Hierarchy.SetLocation 方式）。"
 }

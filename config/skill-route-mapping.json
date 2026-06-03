@@ -1,5 +1,5 @@
 ﻿{
-    "version": "1.2.0",
+    "version": "1.2.1",
     "_note": "v1.2.0: 新增 userSynonyms 字段 — 用户常见物体名/动作动词，弥补自然语言≠API名称的精准度鸿沟",
     "routes": [
         {
@@ -1087,6 +1087,55 @@
             ],
             "pathSegments": [
                 "animation"
+            ],
+            "relatedSkills": []
+        },
+        {
+            "domain": "business-portfolio",
+            "label": "业务组合范式",
+            "skillPath": "reference/business-portfolio/SKILL.md",
+            "keywords": [
+                "安防巡检",
+                "security patrol",
+                "巡逻",
+                "无人机",
+                "drone",
+                "飞行",
+                "楼宇拆解",
+                "building explode",
+                "楼层爆炸",
+                "闸门",
+                "gate",
+                "启闭",
+                "区域规划",
+                "area planning",
+                "镜头循环漫游",
+                "camera roam loop",
+                "模型旋转",
+                "旋转",
+                "车辆气泡",
+                "跟随气泡",
+                "bubble follow",
+                "入侵检测",
+                "intrusion detection",
+                "闯入",
+                "批量编辑",
+                "gizmo",
+                "batch edit",
+                "业务组合",
+                "business portfolio"
+            ],
+            "aliases": [
+                "business",
+                "portfolio",
+                "recipes",
+                "组合",
+                "范式",
+                "套路"
+            ],
+            "pathSegments": [
+                "business-portfolio",
+                "portfolio"
             ],
             "relatedSkills": []
         }

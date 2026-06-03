@@ -102,7 +102,14 @@
   ],
   "api_flow": [
     {
-      "step": 1,
+      "step": "步骤1",
+      "api": "App.Renderer.UnRegisterSceneEvent",
+      "params": {
+        "name": "OnWdpSceneIsReady"
+      }
+    },
+    {
+      "step": "步骤2",
       "description": "等待场景就绪后执行业务链路",
       "api": "App.Renderer.RegisterSceneEvent('OnWdpSceneIsReady', func)",
       "params": {
@@ -111,7 +118,7 @@
       }
     },
     {
-      "step": 2,
+      "step": "步骤3",
       "description": "创建接驳线路对象",
       "api": "new App.Path({...}) + App.Scene.Add(entity)",
       "params": {
@@ -129,7 +136,7 @@
       }
     },
     {
-      "step": 3,
+      "step": "步骤4",
       "description": "创建班车车辆对象并更新运行状态",
       "api": "new App.Particle({...}) + App.Scene.Add(entity)",
       "params": {
@@ -142,7 +149,7 @@
       }
     },
     {
-      "step": 4,
+      "step": "步骤5",
       "description": "创建轨迹回放绑定对象",
       "api": "new App.Bound({...}) + App.Scene.Add(entity)",
       "params": {
@@ -160,7 +167,7 @@
       }
     },
     {
-      "step": 5,
+      "step": "步骤6",
       "description": "注册点击联动事件",
       "api": "App.Renderer.RegisterSceneEvent('OnEntityClicked', func)",
       "params": {
@@ -169,7 +176,7 @@
       }
     },
     {
-      "step": 6,
+      "step": "步骤7",
       "description": "点击车辆后创建视频窗口",
       "api": "new App.Window({...}) + App.Scene.Add(entity)",
       "params": {
@@ -178,14 +185,17 @@
           "location": "${clickedLocation}",
           "windowStyle": {
             "url": "shuttle_video.html?busId=${busId}",
-            "size": [320, 240]
+            "size": [
+              320,
+              240
+            ]
           },
           "customId": "shuttle_video_window"
         }
       }
     },
     {
-      "step": 7,
+      "step": "步骤8",
       "description": "点击或异常时聚焦车辆",
       "api": "App.CameraControl.SetCameraPose",
       "params": {
@@ -195,7 +205,7 @@
       }
     },
     {
-      "step": 8,
+      "step": "步骤9",
       "description": "持续更新线路与车辆运行态势",
       "api": "entity.Update({...})",
       "params": {
@@ -221,18 +231,38 @@
     }
   ],
   "cleanup_chain": [
-    {"create": "new App.Path({...}) + App.Scene.Add(entity)", "cleanup": "pathObj.Delete()"},
-    {"create": "new App.Particle({...}) + App.Scene.Add(entity)", "cleanup": "particleObj.Delete()"},
-    {"create": "new App.Poi({...}) + App.Scene.Add(entity)", "cleanup": "poiObj.Delete()"},
-    {"create": "new App.Bound({...}) + App.Scene.Add(entity)", "cleanup": "boundObj.Delete()"},
-    {"create": "new App.Window({...}) + App.Scene.Add(entity)", "cleanup": "windowObj.Delete()"},
-    {"create": "RegisterSceneEvent", "cleanup": "UnRegisterSceneEvent"}
+    {
+      "create": "new App.Path({...}) + App.Scene.Add(entity)",
+      "cleanup": "pathObj.Delete()"
+    },
+    {
+      "create": "new App.Particle({...}) + App.Scene.Add(entity)",
+      "cleanup": "particleObj.Delete()"
+    },
+    {
+      "create": "new App.Poi({...}) + App.Scene.Add(entity)",
+      "cleanup": "poiObj.Delete()"
+    },
+    {
+      "create": "new App.Bound({...}) + App.Scene.Add(entity)",
+      "cleanup": "boundObj.Delete()"
+    },
+    {
+      "create": "new App.Window({...}) + App.Scene.Add(entity)",
+      "cleanup": "windowObj.Delete()"
+    },
+    {
+      "create": "RegisterSceneEvent",
+      "cleanup": "UnRegisterSceneEvent"
+    }
   ],
   "pattern": {
     "type": "scenic-shuttle-monitoring",
     "architecture": "event-driven-transport-visualization",
     "data_flow": "realtime-operations-linked-visualization",
-    "recommended_patterns": ["wdp-path-roam-animation"],
+    "recommended_patterns": [
+      "wdp-path-roam-animation"
+    ],
     "key_features": [
       "线路维度运行态势",
       "车辆维度运行监控",
@@ -240,5 +270,6 @@
       "点击聚焦车辆",
       "视频窗口联动"
     ]
-  }
+  },
+  "description": "⚠️ 适用场景：接驳车/公交沿固定路线循环移动的轨迹展示（Particle 车辆 + Path 路径 + Bound 移动 + 相机跟随）。如需车顶气泡跟随（车牌/车速等动态标签），需将 Particle + Poi 打包进 App.Group，再以 Group 作为 Bound.moving 目标，参考 reference/business-portfolio/vehicle-bubble-follow/SKILL.md。本场景默认无 Group 打包和气泡，仅做车辆轨迹移动。"
 }

@@ -1,4 +1,4 @@
-{
+﻿{
   "metadata": {
     "scenario_id": "scene-environment-control",
     "version": "3.0.0"
@@ -33,7 +33,9 @@
     "按需开启压暗突出业务数据",
     "组件销毁时将所有全局状态还原为默认值"
   ],
-  "primary_skills": ["reference/environment/SKILL.md"],
+  "primary_skills": [
+    "reference/environment/SKILL.md"
+  ],
   "secondary_skills": [],
   "required_clarifications": [
     "天气的具体值（Sunny/Rain/Snow/Fog 等）",
@@ -73,7 +75,7 @@
     {
       "step": 1,
       "description": "设置场景天气状态",
-      "api": "App.Scene.SetWeather",
+      "api": "App.Environment.SetSceneWeather",
       "params": {
         "weather": "Rain"
       }
@@ -81,7 +83,7 @@
     {
       "step": 2,
       "description": "设置场景时间（如夜间）",
-      "api": "App.Scene.SetTime",
+      "api": "App.Environment.SetSkylightTime",
       "params": {
         "time": 22
       }
@@ -89,7 +91,7 @@
     {
       "step": 3,
       "description": "压暗场景突出业务数据",
-      "api": "App.Scene.SetDark",
+      "api": "App.Environment.SetScenePostSettings",
       "params": {
         "bDark": true
       }
@@ -103,16 +105,27 @@
     }
   ],
   "cleanup_chain": [
-    {"create": "App.Scene.SetWeather(非Sunny)", "cleanup": "App.Scene.SetWeather('Sunny')"},
-    {"create": "App.Scene.SetTime(非12)", "cleanup": "App.Scene.SetTime(12)"},
-    {"create": "App.Scene.SetDark(true)", "cleanup": "App.Scene.SetDark(false)"}
+    {
+      "create": "App.Scene.SetWeather(非Sunny)",
+      "cleanup": "App.Scene.SetWeather('Sunny')"
+    },
+    {
+      "create": "App.Scene.SetTime(非12)",
+      "cleanup": "App.Scene.SetTime(12)"
+    },
+    {
+      "create": "App.Scene.SetDark(true)",
+      "cleanup": "App.Scene.SetDark(false)"
+    }
   ],
   "cleanup_note": "环境状态属于全局单例，组件销毁时必须重置（SetWeather('Sunny')、SetTime(12)、SetDark(false)）以避免影响其他页面",
   "pattern": {
     "type": "environment-control",
     "architecture": "global-singleton-setter",
     "data_flow": "no-downstream-data-flow",
-    "recommended_patterns": ["wdp-scene-environment-control"],
+    "recommended_patterns": [
+      "wdp-scene-environment-control"
+    ],
     "key_features": [
       "天气枚举控制（Sunny/Rain/Snow）",
       "昼夜时间设置",
@@ -120,5 +133,6 @@
       "全局状态必须在清理时还原",
       "其它兜底处理"
     ]
-  }
+  },
+  "description": "适用场景：环境与天气控制——光照/天空盒/雾效/粒子天气（雨/雪）+ 环境参数调节 + 时间推进。核心 API：App.Environment（光照/天空/雾）+ App.Particle（雨/雪粒子效果）。"
 }

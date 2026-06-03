@@ -109,7 +109,7 @@
   ],
   "api_flow": [
     {
-      "step": 1,
+      "step": "步骤1",
       "description": "确认网格区域类型并创建",
       "api": "new App.Range({...}) + App.Scene.Add(entity) 或 GIS GeoLayer",
       "params": {
@@ -128,7 +128,7 @@
       }
     },
     {
-      "step": 2,
+      "step": "步骤2",
       "description": "创建网格边界路径",
       "api": "new App.Path({...}) + App.Scene.Add(entity)",
       "params": {
@@ -147,7 +147,7 @@
       }
     },
     {
-      "step": 3,
+      "step": "步骤3",
       "description": "创建无人机/巡检车粒子实体",
       "api": "new App.Particle({...}) + App.Scene.Add(entity)",
       "params": {
@@ -156,14 +156,18 @@
           "location": "[121.464, 31.224, 30]",
           "particleType": "vehicle_drone",
           "particleStyle": {
-            "scale3d": [1.0, 1.0, 1.0]
+            "scale3d": [
+              1.0,
+              1.0,
+              1.0
+            ]
           },
           "customId": "inspection_drone_1"
         }
       }
     },
     {
-      "step": 4,
+      "step": "步骤4",
       "description": "绑定巡检对象到网格路径",
       "api": "new App.Bound({...}) + App.Scene.Add(entity)",
       "params": {
@@ -181,7 +185,14 @@
       }
     },
     {
-      "step": 5,
+      "step": "步骤5",
+      "api": "App.Renderer.UnRegisterSceneEvent",
+      "params": {
+        "name": "OnMoveAlongPathEndEvent"
+      }
+    },
+    {
+      "step": "步骤6",
       "description": "注册巡检点到达事件",
       "api": "App.Renderer.RegisterSceneEvent('OnMoveAlongPathEndEvent', func)",
       "params": {
@@ -190,7 +201,7 @@
       }
     },
     {
-      "step": 6,
+      "step": "步骤7",
       "description": "创建巡检数据窗口",
       "api": "new App.Window({...}) + App.Scene.Add(entity)",
       "params": {
@@ -199,16 +210,19 @@
           "location": "${checkpointLocation}",
           "windowStyle": {
             "url": "inspection_data.html?gridId=grid_1",
-            "size": [350, 450]
+            "size": [
+              350,
+              450
+            ]
           },
           "customId": "grid_window_1"
         }
       }
     },
     {
-      "step": 7,
+      "step": "步骤8",
       "description": "相机跟随巡检对象（可选）",
-      "api": "App.CameraControl.UpdateCamera",
+      "api": "App.CameraControl.SetCameraPose",
       "params": {
         "mode": "follow",
         "target": "${droneParticle}"
@@ -233,19 +247,42 @@
     }
   ],
   "cleanup_chain": [
-    {"create": "Range/GIS区域", "cleanup": "rangeObj.Delete()"},
-    {"create": "new App.Path({...}) + App.Scene.Add(entity)", "cleanup": "pathObj.Delete()"},
-    {"create": "new App.Particle({...}) + App.Scene.Add(entity)", "cleanup": "particleObj.Delete()"},
-    {"create": "new App.Bound({...}) + App.Scene.Add(entity)", "cleanup": "boundObj.Delete()"},
-    {"create": "new App.Window({...}) + App.Scene.Add(entity)", "cleanup": "windowObj.Delete()"},
-    {"create": "RegisterSceneEvent", "cleanup": "UnRegisterSceneEvent"},
-    {"create": "Camera跟随", "cleanup": "ResetCameraMode"}
+    {
+      "create": "Range/GIS区域",
+      "cleanup": "rangeObj.Delete()"
+    },
+    {
+      "create": "new App.Path({...}) + App.Scene.Add(entity)",
+      "cleanup": "pathObj.Delete()"
+    },
+    {
+      "create": "new App.Particle({...}) + App.Scene.Add(entity)",
+      "cleanup": "particleObj.Delete()"
+    },
+    {
+      "create": "new App.Bound({...}) + App.Scene.Add(entity)",
+      "cleanup": "boundObj.Delete()"
+    },
+    {
+      "create": "new App.Window({...}) + App.Scene.Add(entity)",
+      "cleanup": "windowObj.Delete()"
+    },
+    {
+      "create": "RegisterSceneEvent",
+      "cleanup": "UnRegisterSceneEvent"
+    },
+    {
+      "create": "Camera跟随",
+      "cleanup": "ResetCameraMode"
+    }
   ],
   "pattern": {
     "type": "grid-management",
     "architecture": "gis-wdp-hybrid",
     "data_flow": "spatial-inspection-driven",
-    "recommended_patterns": ["wdp-path-roam-animation"],
+    "recommended_patterns": [
+      "wdp-path-roam-animation"
+    ],
     "key_features": [
       "网格区域可视化",
       "GIS/WDP混合数据源",
@@ -254,5 +291,6 @@
       "相机跟随模式",
       "巡检点数据采集"
     ]
-  }
+  },
+  "description": "适用场景：城市网格化巡检管理——网格区域 GIS 叠加 + 巡检点 POI + 巡检员路径移动 + 问题上报 Window + 相机跟随。核心 API：GIS GeoLayer（网格叠加）+ App.Poi（巡检点）+ App.Path（巡检路径）+ App.Bound（移动）+ App.CameraControl（跟随）+ App.Window（问题面板）。⚠️ 相机 API 统一使用 App.CameraControl.SetCameraPose，不使用 UpdateCamera（废弃）。"
 }

@@ -129,7 +129,7 @@
   ],
   "api_flow": [
     {
-      "step": 1,
+      "step": "步骤1",
       "description": "创建巡逻路径线",
       "api": "new App.Path({...}) + App.Scene.Add(entity)",
       "params": {
@@ -149,7 +149,7 @@
       }
     },
     {
-      "step": 2,
+      "step": "步骤2",
       "description": "创建机器狗粒子实体",
       "api": "new App.Particle({...}) + App.Scene.Add(entity)",
       "params": {
@@ -157,13 +157,17 @@
         "config": {
           "location": "[121.453, 31.112, 69]",
           "particleType": "vehicle_taxi",
-          "scale3d": [30, 30, 30],
+          "scale3d": [
+            30,
+            30,
+            30
+          ],
           "customId": "patrol-dog"
         }
       }
     },
     {
-      "step": 3,
+      "step": "步骤3",
       "description": "创建POI点位标注",
       "api": "new App.Poi({...}) + App.Scene.Add(entity)",
       "params": {
@@ -172,14 +176,18 @@
           "location": "[121.453, 31.112, 69]",
           "poiStyle": {
             "markerNormalUrl": "dog_poi_icon.png",
-            "labelContent": ["机器狗巡逻", "#FFFFFFFF", 14]
+            "labelContent": [
+              "机器狗巡逻",
+              "#FFFFFFFF",
+              14
+            ]
           },
           "customId": "patrol-dog-poi"
         }
       }
     },
     {
-      "step": 4,
+      "step": "步骤4",
       "description": "将机器狗和POI绑定到路径，驱动组合体移动",
       "api": "new App.Bound({...}) + App.Scene.Add(entity)",
       "params": {
@@ -187,7 +195,9 @@
         "config": {
           "moving": "${particleObj}",
           "path": "${pathObj}",
-          "bindEntities": ["${poiObj}"],
+          "bindEntities": [
+            "${poiObj}"
+          ],
           "boundStyle": {
             "time": 120,
             "bLoop": true,
@@ -198,7 +208,14 @@
       }
     },
     {
-      "step": 5,
+      "step": "步骤5",
+      "api": "App.Renderer.UnRegisterSceneEvent",
+      "params": {
+        "name": "OnEntityClicked"
+      }
+    },
+    {
+      "step": "步骤6",
       "description": "注册POI点击事件监听",
       "api": "App.Renderer.RegisterSceneEvent('OnEntityClicked', func)",
       "params": {
@@ -207,7 +224,7 @@
       }
     },
     {
-      "step": 6,
+      "step": "步骤7",
       "description": "启动相机第三人称跟随机器狗",
       "api": "App.CameraControl.UpdateCamera",
       "params": {
@@ -218,7 +235,7 @@
       }
     },
     {
-      "step": 7,
+      "step": "步骤8",
       "description": "[事件回调中] 点击POI后创建Window弹窗",
       "api": "new App.Window({...}) + App.Scene.Add(entity)",
       "params": {
@@ -227,8 +244,14 @@
           "location": "${clickedPoiLocation}",
           "windowStyle": {
             "url": "dog_info.html?id=${dogId}",
-            "size": [300, 250],
-            "offset": [0, 1.7]
+            "size": [
+              300,
+              250
+            ],
+            "offset": [
+              0,
+              1.7
+            ]
           },
           "customId": "patrol-dog-window"
         }
@@ -258,19 +281,42 @@
     }
   ],
   "cleanup_chain": [
-    {"create": "new App.Path({...}) + App.Scene.Add(entity)", "cleanup": "pathObj.Delete()"},
-    {"create": "new App.Particle({...}) + App.Scene.Add(entity)", "cleanup": "particleObj.Delete()"},
-    {"create": "new App.Poi({...}) + App.Scene.Add(entity)", "cleanup": "poiObj.Delete()"},
-    {"create": "new App.Bound({...}) + App.Scene.Add(entity)", "cleanup": "boundObj.Delete()"},
-    {"create": "new App.Window({...}) + App.Scene.Add(entity)", "cleanup": "windowObj.Delete()"},
-    {"create": "App.CameraControl.UpdateCamera(follow)", "cleanup": "停止跟随（UpdateCamera 复位相机）"},
-    {"create": "RegisterSceneEvent(OnEntityClicked)", "cleanup": "UnRegisterSceneEvent"}
+    {
+      "create": "new App.Path({...}) + App.Scene.Add(entity)",
+      "cleanup": "pathObj.Delete()"
+    },
+    {
+      "create": "new App.Particle({...}) + App.Scene.Add(entity)",
+      "cleanup": "particleObj.Delete()"
+    },
+    {
+      "create": "new App.Poi({...}) + App.Scene.Add(entity)",
+      "cleanup": "poiObj.Delete()"
+    },
+    {
+      "create": "new App.Bound({...}) + App.Scene.Add(entity)",
+      "cleanup": "boundObj.Delete()"
+    },
+    {
+      "create": "new App.Window({...}) + App.Scene.Add(entity)",
+      "cleanup": "windowObj.Delete()"
+    },
+    {
+      "create": "App.CameraControl.UpdateCamera(follow)",
+      "cleanup": "停止跟随（UpdateCamera 复位相机）"
+    },
+    {
+      "create": "RegisterSceneEvent(OnEntityClicked)",
+      "cleanup": "UnRegisterSceneEvent"
+    }
   ],
   "pattern": {
     "type": "workflow-orchestration",
     "architecture": "combo-entity-path-follow",
     "data_flow": "event-driven-animation",
-    "recommended_patterns": ["wdp-path-roam-animation"],
+    "recommended_patterns": [
+      "wdp-path-roam-animation"
+    ],
     "key_features": [
       "组合体路径移动（Particle+POI绑定Bound）",
       "相机第三人称跟随 UpdateCamera",
@@ -278,5 +324,6 @@
       "bindEntities实现多实体同步移动",
       "事件驱动弹窗按需创建"
     ]
-  }
+  },
+  "description": "⚠️ 适用场景：机器狗/车辆沿路径巡逻 + POI标签跟随 + 点击弹窗 + 相机跟随。POI 跟随方式：通过 Bound 的 bindEntities 参数将 POI 绑定到运动体上，POI 随车移动（始终在头顶）。如需每经过航点时在航点位置新建 POI（静止标记），参考 Skill 库 security-patrol（OnMoveAlongPathProcessEvent + passedPointIndex + new Poi + Scene.Add）。两种模式合理共存：bindEntities 适合'跟随标签'，事件新建适合'途经标记'。"
 }

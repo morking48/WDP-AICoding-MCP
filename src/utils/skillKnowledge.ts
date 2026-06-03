@@ -155,6 +155,17 @@ const KEYWORD_WEIGHTS: Record<string, number> = {
   '中国地图': 2, '颜色': 2, '屏幕': 2, '形状': 2,
   '实时视频': 2, '视频融合': 2, '监控': 2,
   '动画': 2, 'animation': 2, '位移动画': 2, '旋转动画': 2, '缩放动画': 2, '自转': 2, '缓动': 2, '关键帧': 2,
+  // business-portfolio 业务组合
+  '业务组合': 3, 'business portfolio': 3,
+  '安防巡检': 3, '巡逻': 3, 'security patrol': 3,
+  '无人机': 3, 'drone': 3,
+  '楼宇拆解': 3, 'building explode': 3, '楼层爆炸': 3, '爆炸图': 3,
+  '闸门': 3, 'gate': 3, '启闭': 3,
+  '区域规划': 3, 'area planning': 3,
+  '镜头循环': 3, 'camera roam loop': 3,
+  '车辆跟随': 3, 'vehicle follow': 3, '气泡跟随': 3,
+  '入侵检测': 3, 'intrusion detection': 3, '闯入': 3,
+  'gizmo': 3, '批量编辑': 3,
 };
 
 // ========== 歧义消解规则 ==========

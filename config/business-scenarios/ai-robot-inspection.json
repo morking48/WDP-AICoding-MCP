@@ -99,7 +99,7 @@
   ],
   "api_flow": [
     {
-      "step": 1,
+      "step": "步骤1",
       "description": "创建巡检路径",
       "api": "new App.Path({...}) + App.Scene.Add(entity)",
       "params": {
@@ -118,7 +118,7 @@
       }
     },
     {
-      "step": 2,
+      "step": "步骤2",
       "description": "创建检查点POI标注",
       "api": "new App.Poi({...}) + App.Scene.Add(entity)",
       "params": {
@@ -127,14 +127,18 @@
           "location": "[121.453, 31.112, 69]",
           "poiStyle": {
             "markerNormalUrl": "checkpoint_icon.png",
-            "labelContent": ["检查点A", "#FFFFFFFF", 14]
+            "labelContent": [
+              "检查点A",
+              "#FFFFFFFF",
+              14
+            ]
           },
           "customId": "checkpoint_A"
         }
       }
     },
     {
-      "step": 3,
+      "step": "步骤3",
       "description": "创建机器人粒子实体",
       "api": "new App.Particle({...}) + App.Scene.Add(entity)",
       "params": {
@@ -143,14 +147,18 @@
           "location": "[121.453, 31.112, 69]",
           "particleType": "vehicle_taxi",
           "particleStyle": {
-            "scale3d": [1.5, 1.5, 1.5]
+            "scale3d": [
+              1.5,
+              1.5,
+              1.5
+            ]
           },
           "customId": "robot_particle_1"
         }
       }
     },
     {
-      "step": 4,
+      "step": "步骤4",
       "description": "绑定机器人到巡检路径",
       "api": "new App.Bound({...}) + App.Scene.Add(entity)",
       "params": {
@@ -168,7 +176,14 @@
       }
     },
     {
-      "step": 5,
+      "step": "步骤5",
+      "api": "App.Renderer.UnRegisterSceneEvent",
+      "params": {
+        "name": "OnMoveAlongPathEndEvent"
+      }
+    },
+    {
+      "step": "步骤6",
       "description": "注册路径移动结束事件监听",
       "api": "App.Renderer.RegisterSceneEvent('OnMoveAlongPathEndEvent', func)",
       "params": {
@@ -177,7 +192,7 @@
       }
     },
     {
-      "step": 6,
+      "step": "步骤7",
       "description": "在检查点创建数据采集窗口",
       "api": "new App.Window({...}) + App.Scene.Add(entity)",
       "params": {
@@ -186,14 +201,17 @@
           "location": "${checkpointLocation}",
           "windowStyle": {
             "url": "inspection_data.html?pointId=${pointId}",
-            "size": [300, 400]
+            "size": [
+              300,
+              400
+            ]
           },
           "customId": "data_window_${pointId}"
         }
       }
     },
     {
-      "step": 7,
+      "step": "步骤8",
       "description": "更新检查点POI状态",
       "api": "entity.Update({...})",
       "params": {
@@ -201,7 +219,11 @@
         "updateData": {
           "poiStyle": {
             "markerNormalUrl": "checkpoint_completed_icon.png",
-            "labelContent": ["检查点A (已完成)", "#FFFFFFFF", 14]
+            "labelContent": [
+              "检查点A (已完成)",
+              "#FFFFFFFF",
+              14
+            ]
           }
         }
       }
@@ -225,18 +247,38 @@
     }
   ],
   "cleanup_chain": [
-    {"create": "new App.Path({...}) + App.Scene.Add(entity)", "cleanup": "pathObj.Delete()"},
-    {"create": "new App.Poi({...}) + App.Scene.Add(entity)", "cleanup": "poiObj.Delete()"},
-    {"create": "new App.Particle({...}) + App.Scene.Add(entity)", "cleanup": "particleObj.Delete()"},
-    {"create": "new App.Bound({...}) + App.Scene.Add(entity)", "cleanup": "boundObj.Delete()"},
-    {"create": "new App.Window({...}) + App.Scene.Add(entity)", "cleanup": "windowObj.Delete()"},
-    {"create": "RegisterSceneEvent", "cleanup": "UnRegisterSceneEvent"}
+    {
+      "create": "new App.Path({...}) + App.Scene.Add(entity)",
+      "cleanup": "pathObj.Delete()"
+    },
+    {
+      "create": "new App.Poi({...}) + App.Scene.Add(entity)",
+      "cleanup": "poiObj.Delete()"
+    },
+    {
+      "create": "new App.Particle({...}) + App.Scene.Add(entity)",
+      "cleanup": "particleObj.Delete()"
+    },
+    {
+      "create": "new App.Bound({...}) + App.Scene.Add(entity)",
+      "cleanup": "boundObj.Delete()"
+    },
+    {
+      "create": "new App.Window({...}) + App.Scene.Add(entity)",
+      "cleanup": "windowObj.Delete()"
+    },
+    {
+      "create": "RegisterSceneEvent",
+      "cleanup": "UnRegisterSceneEvent"
+    }
   ],
   "pattern": {
     "type": "workflow-orchestration",
     "architecture": "entity-path-binding",
     "data_flow": "event-driven-animation",
-    "recommended_patterns": ["wdp-path-roam-animation"],
+    "recommended_patterns": [
+      "wdp-path-roam-animation"
+    ],
     "key_features": [
       "路径动画控制",
       "实体绑定移动",
@@ -244,5 +286,6 @@
       "动态状态更新",
       "可视化巡检过程"
     ]
-  }
+  },
+  "description": "⚠️ 适用场景：巡检机器人/车辆沿路径移动 + 途经检查点POI + 到达终点触发数据采集。事件类型：本场景使用 OnMoveAlongPathEndEvent（终点触发1次）。如需每途经航点触发（OnMoveAlongPathProcessEvent + passedPointIndex）弹途经标记，参考 Skill 库 security-patrol 或 drone-flight。两种事件互补：EndEvent 适合'到达终点的总结动作'，ProcessEvent 适合'途经航点的进度展示'。"
 }

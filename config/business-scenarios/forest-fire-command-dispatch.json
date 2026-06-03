@@ -109,7 +109,7 @@
   ],
   "api_flow": [
     {
-      "step": 1,
+      "step": "步骤1",
       "description": "创建火点POI标注",
       "api": "new App.Poi({...}) + App.Scene.Add(entity)",
       "params": {
@@ -118,14 +118,18 @@
           "location": "[116.4074, 39.9042, 50]",
           "poiStyle": {
             "markerNormalUrl": "fire_icon.png",
-            "labelContent": ["火点", "#FFFFFFFF", 14]
+            "labelContent": [
+              "火点",
+              "#FFFFFFFF",
+              14
+            ]
           },
           "customId": "fire_point_1"
         }
       }
     },
     {
-      "step": 2,
+      "step": "步骤2",
       "description": "创建危险范围区域",
       "api": "new App.Range({...}) + App.Scene.Add(entity)",
       "params": {
@@ -144,7 +148,7 @@
       }
     },
     {
-      "step": 3,
+      "step": "步骤3",
       "description": "创建扑火队伍粒子实体",
       "api": "new App.Particle({...}) + App.Scene.Add(entity)",
       "params": {
@@ -153,14 +157,18 @@
           "location": "[116.400, 39.900, 0]",
           "particleType": "vehicle_fire_truck",
           "particleStyle": {
-            "scale3d": [1.2, 1.2, 1.2]
+            "scale3d": [
+              1.2,
+              1.2,
+              1.2
+            ]
           },
           "customId": "fire_team_1"
         }
       }
     },
     {
-      "step": 4,
+      "step": "步骤4",
       "description": "创建灭火行动路径",
       "api": "new App.Path({...}) + App.Scene.Add(entity)",
       "params": {
@@ -179,7 +187,7 @@
       }
     },
     {
-      "step": 5,
+      "step": "步骤5",
       "description": "绑定队伍到行动路径",
       "api": "new App.Bound({...}) + App.Scene.Add(entity)",
       "params": {
@@ -197,7 +205,7 @@
       }
     },
     {
-      "step": 6,
+      "step": "步骤6",
       "description": "聚焦到火点位置",
       "api": "App.CameraControl.SetCameraPose",
       "params": {
@@ -208,7 +216,7 @@
       }
     },
     {
-      "step": 7,
+      "step": "步骤7",
       "description": "创建指挥信息窗口",
       "api": "new App.Window({...}) + App.Scene.Add(entity)",
       "params": {
@@ -217,15 +225,28 @@
           "location": "[116.4074, 39.9042, 50]",
           "windowStyle": {
             "url": "command_dashboard.html?fireId=fire_1",
-            "size": [400, 500],
-            "offset": [0, 2]
+            "size": [
+              400,
+              500
+            ],
+            "offset": [
+              0,
+              2
+            ]
           },
           "customId": "command_window_1"
         }
       }
     },
     {
-      "step": 8,
+      "step": "步骤8",
+      "api": "App.Renderer.UnRegisterSceneEvent",
+      "params": {
+        "name": "OnMoveAlongPathEndEvent"
+      }
+    },
+    {
+      "step": "步骤9",
       "description": "注册队伍到达事件",
       "api": "App.Renderer.RegisterSceneEvent('OnMoveAlongPathEndEvent', func)",
       "params": {
@@ -234,7 +255,7 @@
       }
     },
     {
-      "step": 9,
+      "step": "步骤10",
       "description": "更新火点状态标注",
       "api": "entity.Update({...})",
       "params": {
@@ -242,7 +263,11 @@
         "updateData": {
           "poiStyle": {
             "markerNormalUrl": "fire_controlled_icon.png",
-            "labelContent": ["火点 (扑救中)", "#FFFFFFFF", 14]
+            "labelContent": [
+              "火点 (扑救中)",
+              "#FFFFFFFF",
+              14
+            ]
           }
         }
       }
@@ -261,19 +286,43 @@
     }
   ],
   "cleanup_chain": [
-    {"create": "new App.Poi({...}) + App.Scene.Add(entity)", "cleanup": "poiObj.Delete()"},
-    {"create": "new App.Range({...}) + App.Scene.Add(entity)", "cleanup": "rangeObj.Delete()"},
-    {"create": "new App.Particle({...}) + App.Scene.Add(entity)", "cleanup": "particleObj.Delete()"},
-    {"create": "new App.Path({...}) + App.Scene.Add(entity)", "cleanup": "pathObj.Delete()"},
-    {"create": "new App.Bound({...}) + App.Scene.Add(entity)", "cleanup": "boundObj.Delete()"},
-    {"create": "new App.Window({...}) + App.Scene.Add(entity)", "cleanup": "windowObj.Delete()"},
-    {"create": "RegisterSceneEvent", "cleanup": "UnRegisterSceneEvent"}
+    {
+      "create": "new App.Poi({...}) + App.Scene.Add(entity)",
+      "cleanup": "poiObj.Delete()"
+    },
+    {
+      "create": "new App.Range({...}) + App.Scene.Add(entity)",
+      "cleanup": "rangeObj.Delete()"
+    },
+    {
+      "create": "new App.Particle({...}) + App.Scene.Add(entity)",
+      "cleanup": "particleObj.Delete()"
+    },
+    {
+      "create": "new App.Path({...}) + App.Scene.Add(entity)",
+      "cleanup": "pathObj.Delete()"
+    },
+    {
+      "create": "new App.Bound({...}) + App.Scene.Add(entity)",
+      "cleanup": "boundObj.Delete()"
+    },
+    {
+      "create": "new App.Window({...}) + App.Scene.Add(entity)",
+      "cleanup": "windowObj.Delete()"
+    },
+    {
+      "create": "RegisterSceneEvent",
+      "cleanup": "UnRegisterSceneEvent"
+    }
   ],
   "pattern": {
     "type": "command-control",
     "architecture": "real-time-3d-visualization",
     "data_flow": "event-driven-spatial",
-    "recommended_patterns": ["wdp-path-roam-animation", "wdp-poi-window-interaction"],
+    "recommended_patterns": [
+      "wdp-path-roam-animation",
+      "wdp-poi-window-interaction"
+    ],
     "key_features": [
       "3D态势可视化",
       "实时资源调度",
@@ -282,5 +331,6 @@
       "空间范围标注",
       "相机智能聚焦"
     ]
-  }
+  },
+  "description": "适用场景：森林防火应急扑救指挥——多火点 POI + 隔离带 Range + 消防资源 Particle/Path/Bound 调度 + 指挥大屏 Window。核心 API：App.Poi（火点/资源点）+ App.Range（隔离带/管控区）+ App.Particle（消防车/直升机）+ App.Path（调度路径）+ App.Bound（资源移动）+ App.CameraControl（指挥视角）+ App.Window（指挥面板）。"
 }

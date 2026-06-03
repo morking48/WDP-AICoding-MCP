@@ -70,11 +70,21 @@
   ],
   "api_flow": [
     {
+      "step": "设置相机初始位姿",
+      "api": "App.CameraControl.SetCameraPose",
+      "params": {
+        "target": "[${lng}, ${lat}, ${alt}]",
+        "pitch": -30,
+        "yaw": 0,
+        "distance": 500
+      }
+    },
+    {
       "step": 1,
       "description": "创建虚拟监控探头",
-      "api": "new App.Camera({...}) + App.Scene.Add(entity)",
+      "api": "new App.Viewshed({...})",
       "params": {
-        "entity": "new App.Camera({...})",
+        "entity": "new App.Viewshed({...})",
         "config": {
           "location": "${cameraLocation}",
           "rotation": {
@@ -88,7 +98,7 @@
     {
       "step": 2,
       "description": "设置探头视场角",
-      "api": "entity.SetFOV({...})",
+      "api": "viewshed.fieldOfView = fovValue  // 属性赋值，非 API 调用",
       "params": {
         "fov": 60
       }
@@ -96,7 +106,7 @@
     {
       "step": 3,
       "description": "设置探头投射距离",
-      "api": "entity.SetDistance({...})",
+      "api": "viewshed.distance = distanceValue  // 属性赋值，非 API 调用",
       "params": {
         "distance": 200
       }
@@ -110,14 +120,19 @@
     }
   ],
   "cleanup_chain": [
-    {"create": "new App.Camera({...}) + App.Scene.Add(entity)", "cleanup": "cameraObj.Delete()"}
+    {
+      "create": "new App.Camera({...}) + App.Scene.Add(entity)",
+      "cleanup": "cameraObj.Delete()"
+    }
   ],
   "cleanup_note": "可视域分析消耗较多GPU资源，离开页面时必须严格执行 cameraObj.Delete() 清理探头实体",
   "pattern": {
     "type": "viewshed-analysis",
     "architecture": "entity-camera-projection",
     "data_flow": "config-then-render",
-    "recommended_patterns": ["wdp-camera-viewshed-analysis"],
+    "recommended_patterns": [
+      "wdp-camera-viewshed-analysis"
+    ],
     "key_features": [
       "虚拟监控探头（非玩家相机）",
       "FOV视场角配置",
@@ -126,5 +141,6 @@
       "GPU资源敏感需严格清理",
       "其它兜底处理"
     ]
-  }
+  },
+  "description": "适用场景：监控摄像头可视域分析——摄像头点位 POI + 可视域 Viewshed 锥体 + 焦距/朝向参数调控。核心 API：App.CameraControl.SetCameraPose（相机参数）+ App.Viewshed（可视域覆盖物）+ App.Poi（摄像头点位）。⚠️ fieldOfView 和 distance 是 Viewshed 实例的属性（非 API 方法），通过直接赋值设置。"
 }
