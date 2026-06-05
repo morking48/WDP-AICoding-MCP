@@ -731,6 +731,20 @@ function extractApiFromSkillContent(content: string): Set<string> {
     for (const m of eventMatches) apis.add(m[1]);
   }
 
+  // ===== 方案C：补扫代码块之外的 API 权威声明处，消除"真API被误杀" =====
+  // 根因：部分真实 API 只在 Markdown 标题/表格里声明，或在代码块中跨行截断（如
+  // `## App.Scene.Create(\n  defaultParam,`），仅扫代码块会漏抽 → 校验时误判为幻觉。
+  // 标题与表格是 SKILL.md 中 API 的权威定义处，从中抽取不会引入幻觉（无新增清单、与代码同源）。
+
+  // C1: Markdown 标题中的静态方法/构造器，如 `## App.Scene.Create(...)`、`### new App.Static(...)`
+  //     （允许标题前后包裹反引号；命名空间方法与裸构造器都覆盖）
+  const headingMatches = content.matchAll(/^#{1,6}\s+`?(?:new\s+)?(App\.\w+(?:\.\w+)*)/gm);
+  for (const m of headingMatches) apis.add(m[1]);
+
+  // C2: 行内反引号中的 API 声明（多见于方法一览表格 / 正文引用），如 `App.CameraControl.FlyTo`
+  const inlineCodeMatches = content.matchAll(/`(?:new\s+)?(App\.\w+(?:\.\w+)*)\s*\(?[^`]*`/g);
+  for (const m of inlineCodeMatches) apis.add(m[1]);
+
   return apis;
 }
 

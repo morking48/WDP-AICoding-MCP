@@ -36,3 +36,7 @@ reference/
 # Temp & archives
 temp-check-repo/
 *.zip
+
+# Local skill-library change-detection baseline (runtime state, not source)
+.hermes_skill_snapshot.json
+.hermes_skill_timestamps.json
