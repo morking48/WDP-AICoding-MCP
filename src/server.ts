@@ -120,7 +120,7 @@ app.post('/mcp/call', authMiddleware, async (req, res) => {
   }
 
   try {
-    const result = await handleMcpToolCall(tool, args || {});
+    const result = await handleMcpToolCall(tool, args || {}, sessionId);
 
     // 记录 Skill 调用日志
     if (tool === 'get_skill_content' || tool === 'start_wdp_workflow') {

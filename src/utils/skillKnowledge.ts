@@ -121,6 +121,28 @@ const fileCache: Map<string, CacheEntry> = new Map();
 const builtinSkills: Map<string, string> = new Map();
 let routeMapping: RouteMapping | null = null;
 
+// ========== 会话级 SDK 版本缓存（方案S：跨工具调用复用版本信息） ==========
+// start_wdp_workflow 阶段客户端注入 sdk_version；trigger_self_evaluation 阶段
+// 客户端不再注入，故在服务端按 sessionId 缓存后自动回填，无需改动客户端。
+const sessionSdkVersionCache: Map<string, { sdkVersion: string; ts: number }> = new Map();
+const SESSION_SDK_TTL_MS = 30 * 60 * 1000; // 与 logger 的 SESSION_TTL_MS 对齐
+
+function rememberSessionSdkVersion(sessionId: string | undefined, sdkVersion: string | undefined): void {
+  if (!sessionId || !sdkVersion) return;
+  sessionSdkVersionCache.set(sessionId, { sdkVersion, ts: Date.now() });
+}
+
+function recallSessionSdkVersion(sessionId: string | undefined): string {
+  if (!sessionId) return '';
+  const cached = sessionSdkVersionCache.get(sessionId);
+  if (!cached) return '';
+  if (Date.now() - cached.ts > SESSION_SDK_TTL_MS) {
+    sessionSdkVersionCache.delete(sessionId);
+    return '';
+  }
+  return cached.sdkVersion;
+}
+
 // ========== 关键词权重表 ==========
 const KEYWORD_WEIGHTS: Record<string, number> = {
   // 强意图信号（权重 3）：出现即路由
@@ -620,7 +642,7 @@ const uniqueMatchedSkills = [...new Set(matchedSkills)];
   workflowSteps.push('Step 2: 用 force_full: true 逐个读取 matched_skills 中所有 Skill 文件');
   workflowSteps.push('Step 3: 调用 enforce_routing_check 验证文件读取完整性');
   workflowSteps.push('Step 4: 编码');
-  workflowSteps.push('Step 5: 调用 trigger_self_evaluation 传入 generated_code + used_skills + scenario_id（从 workflow_result.scene.id 获取）');
+  workflowSteps.push('Step 5: 调用 trigger_self_evaluation 传入 generated_code + used_skills + scenario_id（从 workflow_result.scene.id 获取）+ sdk_version（从 workflow_result.sdk_version 获取，用于版本兼容校验）');
   // 8. 构建 guidance（注入后果前置 + API 白名单提示）
   const sceneGuidance = scene
     ? `🎯 当前场景：${scene.name} — ${scene.goal}\n`
@@ -1014,13 +1036,15 @@ export function getMcpToolDefinitions(): McpToolDef[] {
 }
 
 // ========== MCP 工具处理 ==========
-export async function handleMcpToolCall(tool: string, args: Record<string, any>): Promise<any> {
+export async function handleMcpToolCall(tool: string, args: Record<string, any>, sessionId?: string): Promise<any> {
   switch (tool) {
     case 'start_wdp_workflow': {
       const userRequirement = args.user_requirement as string;
       const projectPath = args.projectPath as string;
       if (!userRequirement || !projectPath) return { error: '缺少 user_requirement 或 projectPath 参数' };
       const sdkVersion = args.sdk_version as string | undefined;
+      // 方案S：缓存本会话的 SDK 版本，供后续 trigger_self_evaluation 自动回填（客户端不再注入）
+      rememberSessionSdkVersion(sessionId, sdkVersion);
       return buildWorkflowResponse(userRequirement, projectPath, sdkVersion);
     }
 
@@ -1084,7 +1108,7 @@ case 'list_skills': {
       let nextStep: string;
       if (passed) {
         message = '✅ 文件完整性校验通过。⚠️ 门禁1仅验证文件是否已读取，不能保证不会编造幻觉 API。编码前仍需逐行对照 Skill 白名单。编码后务必调用 trigger_self_evaluation 做 API 白名单终检。';
-        nextStep = '🔜 编码完成后，调用 trigger_self_evaluation，传入 generated_code、used_skills、scenario_id（从 workflow_result.scene.id 获取，用于参数校验）。';
+        nextStep = '🔜 编码完成后，调用 trigger_self_evaluation，传入 generated_code、used_skills、scenario_id（从 workflow_result.scene.id 获取，用于参数校验）、sdk_version（从 workflow_result.sdk_version 获取，用于版本兼容校验）。';
       } else {
         const issues: string[] = [];
         if (notRead.length > 0) issues.push(`${notRead.length} 个 Skill 未读取: ${notRead.join(', ')}`);
@@ -1151,7 +1175,8 @@ case 'list_skills': {
 
       // SDK 版本比对
       let sdkVersionWarnings: string[] = [];
-      const sdkVer = (args.sdk_version as string) || '';
+      // 方案S+E：优先用 AI 透传的 sdk_version（方案E），缺失时回退到本会话缓存（方案S，客户端无需注入）
+      const sdkVer = (args.sdk_version as string) || recallSessionSdkVersion(sessionId) || '';
       if (sdkVer && usedSkills.length > 0) {
         for (const sp of usedSkills) {
           try {
