@@ -349,6 +349,34 @@ function startProfileSaveTimer(): void {
 // 会话缓存：按 "IP:userName" 复用会话 ID，而非每次新建
 const sessionIdCache = new Map<string, { id: string; lastActive: number }>();
 const SESSION_TTL_MS = 30 * 60 * 1000; // 30 分钟无活动则过期
+const SESSION_CLEANUP_INTERVAL_MS = 10 * 60 * 1000; // 每 10 分钟清理一次过期会话
+let sessionCleanupTimer: NodeJS.Timeout | null = null;
+
+/**
+ * 清理过期会话，回收 sessionIdCache + sessionMap 内存。
+ * 两个 Map 必须一致：先按 lastActive 找出过期的 cacheKey，删除其对应的
+ * sessionId（sessionMap）后再删 cacheKey 本身，避免 sessionIdCache 残留
+ * 指向已被回收 sessionMap 的悬空 sessionId。
+ */
+function cleanupExpiredSessions(): void {
+  const now = Date.now();
+  let removed = 0;
+  for (const [cacheKey, entry] of sessionIdCache) {
+    if (now - entry.lastActive >= SESSION_TTL_MS) {
+      sessionMap.delete(entry.id);
+      sessionIdCache.delete(cacheKey);
+      removed++;
+    }
+  }
+  if (removed > 0) {
+    console.log(`[Logger] 清理过期会话 ${removed} 个，当前活跃会话: ${sessionIdCache.size} 个`);
+  }
+}
+
+function startSessionCleanupTimer(): void {
+  if (sessionCleanupTimer) clearInterval(sessionCleanupTimer);
+  sessionCleanupTimer = setInterval(cleanupExpiredSessions, SESSION_CLEANUP_INTERVAL_MS);
+}
 
 export function getOrCreateSessionId(clientIp: string, userName: string = 'anonymous'): string {
   const cacheKey = `${clientIp}:${userName}`;
@@ -758,6 +786,7 @@ export async function initLogger(): Promise<void> {
 
 // ========== 启动 ==========
 startProfileSaveTimer();
+startSessionCleanupTimer();
 
 process.on('exit', flushAllLogs);
 process.on('SIGINT', () => {
