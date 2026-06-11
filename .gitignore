@@ -40,3 +40,6 @@ temp-check-repo/
 # Local skill-library change-detection baseline (runtime state, not source)
 .hermes_skill_snapshot.json
 .hermes_skill_timestamps.json
+
+# Local-only report materials (含客户名/生产数据/内网NFS地址，不纳入版本管理、不推远程)
+presentation/
