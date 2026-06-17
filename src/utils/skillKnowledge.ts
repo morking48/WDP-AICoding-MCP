@@ -804,6 +804,68 @@ async function extractApiFromSkillWithChapters(skillPath: string, content?: stri
   return apis;
 }
 
+// ========== 基类通用方法白名单（来自 _shared/object-base.md） ==========
+// skill 库于 2026-06 起将所有实体对象的通用方法（SetLocation/GetVisible/SetEntityName/
+// Delete/Update/onClick… 以及每字段自动派生的 GetXxx/SetXxx 三套访问器）统一收敛到
+// _shared/object-base.md，子模块 SKILL.md 不再重复列出。门禁若只扫子模块白名单，会把
+// 用户调用的合法基类方法（如 poi.SetLocation()）误判为幻觉。
+// 故从该权威文档运行时抽取基类方法名，作为实体方法（.Xxx 形态）全局白名单。
+// 同源同库、无新增清单；模块级缓存，仅首次校验拉取一次。
+const BASE_OBJECT_DOC = 'reference/_shared/object-base.md';
+let baseEntityMethodsCache: Set<string> | null = null;
+let baseEntityMethodsCacheTs = 0;
+
+async function getBaseEntityMethods(): Promise<Set<string>> {
+  if (baseEntityMethodsCache && (Date.now() - baseEntityMethodsCacheTs) < CACHE_TTL * 1000) {
+    return baseEntityMethodsCache;
+  }
+  const methods = new Set<string>();
+  try {
+    const doc = await readKnowledgeFile(BASE_OBJECT_DOC);
+    // 标题中的方法：### GetLocation() / SetLocation(...)
+    for (const m of doc.matchAll(/^#{1,6}\s+(.+)$/gm)) {
+      for (const mm of m[1].matchAll(/\b([A-Z]\w+)\s*\(/g)) methods.add(mm[1]);
+    }
+    // 正文实体方法调用：obj.SetXxx( / .GetXxx( / .onClick(
+    for (const m of doc.matchAll(/\.([A-Za-z]\w+)\s*\(/g)) {
+      const name = m[1];
+      if (/^[A-Z]/.test(name) || /^on[A-Z]/.test(name)) methods.add(name);
+    }
+    for (const ph of ['GetXxx', 'SetXxx', 'GetField']) methods.delete(ph);
+  } catch {
+    // 拉取失败：返回空集，门禁退回到下方兜底常量
+  }
+  baseEntityMethodsCache = methods;
+  baseEntityMethodsCacheTs = Date.now();
+  return methods;
+}
+
+// ========== 工厂类通用方法白名单（来自 _shared/factory-api.md） ==========
+// 所有工厂（App.Scene.Covering.Poi / App.Scene.Model.Polygon / App.Component.* / App.Tools.* …）
+// 继承 AtomController，自动具备 Create/Add/Get/GetOnly/Delete/ClearCache/SetLocation/
+// SetVisible/UpdateBasic 等方法，子模块 SKILL.md 不再重复。调用形态是完整命名空间路径
+// （如 App.Scene.Covering.Poi.Get），故白名单按"末段方法名"匹配：凡末段是工厂通用方法即放行。
+const FACTORY_API_DOC = 'reference/_shared/factory-api.md';
+let factoryMethodsCache: Set<string> | null = null;
+let factoryMethodsCacheTs = 0;
+
+async function getFactoryMethods(): Promise<Set<string>> {
+  if (factoryMethodsCache && (Date.now() - factoryMethodsCacheTs) < CACHE_TTL * 1000) {
+    return factoryMethodsCache;
+  }
+  const methods = new Set<string>();
+  try {
+    const doc = await readKnowledgeFile(FACTORY_API_DOC);
+    // 标题中的工厂方法：### Create(jsonData) / ### Get(eid?) ...
+    for (const m of doc.matchAll(/^#{2,4}\s+([A-Z]\w+)\s*\(/gm)) methods.add(m[1]);
+  } catch {
+    // 拉取失败：返回空集，工厂方法放行规则不生效（退回严格模式，不误放）
+  }
+  factoryMethodsCache = methods;
+  factoryMethodsCacheTs = Date.now();
+  return methods;
+}
+
 /**
  * 从 api_flow 的 api 字符串中提取标准化 API 名
  * "new App.Path({...})" → "App.Path"
@@ -951,17 +1013,30 @@ async function validateGeneratedCode(
     }
   }
 
-  // 添加通用方法白名单（entity.Delete / entity.Update / entity.SetVisible 等基础方法）
+  // 添加基类通用方法白名单（实体方法 .Xxx 形态）。
+  // 优先从 _shared/object-base.md 抽取（权威、自动跟随更新）；附加少量硬编码兜底，
+  // 确保即便文档拉取失败，最常用的基础方法仍不被误杀。
+  const baseMethods = await getBaseEntityMethods();
+  for (const m of baseMethods) whitelist.add(`.${m}`);
   const commonEntityMethods = ['Delete', 'Update', 'SetVisible', 'Add', 'Remove', 'Get', 'Set'];
   for (const m of commonEntityMethods) whitelist.add(`.${m}`);
 
   // 2. 提取 AI 代码中的 API
   const usedApis = extractApiCallsFromCode(generatedCode);
 
+  // 工厂通用方法集（用于"末段方法名"放行：App.Scene.Covering.Poi.Get → 末段 Get 是工厂方法）
+  const factoryMethods = await getFactoryMethods();
+
   // 3. 对比
   const hallucinated: HallucinatedApi[] = [];
   for (const { line, api } of usedApis) {
-    if (!whitelist.has(api)) {
+    if (whitelist.has(api)) continue;
+    // 工厂方法放行：形如 App.X.Y.Z.Method 且末段 Method 是工厂通用方法（继承自 AtomController）
+    if (api.startsWith('App.') && factoryMethods.size > 0) {
+      const lastSeg = api.split('.').pop() || '';
+      if (factoryMethods.has(lastSeg)) continue;
+    }
+    {
       // 给建议：找白名单中最相似的 API
       let suggestion = '请从已读 Skill 文件中查找正确的 API 名';
       const allApis = Array.from(whitelist);
