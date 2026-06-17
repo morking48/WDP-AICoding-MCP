@@ -684,7 +684,7 @@ const consequenceBlock = `⚠️ 所有 WDP API 签名以 Skill 文件为准，�
   for (const sp of matchedSkills) {
     try {
 const content = await readKnowledgeFile(sp);
-      const apis = [...extractApiFromSkillContent(content)];
+      const apis = [...await extractApiFromSkillWithChapters(sp, content)];
       const verReqs = extractSkillVersionRequirements(content);
       if (apis.length > 0 || verReqs.length > 0) {
         skillApiSummaries.push({ path: sp, apis: apis.slice(0, 30), version_requirements: verReqs });
@@ -767,6 +767,40 @@ function extractApiFromSkillContent(content: string): Set<string> {
   const inlineCodeMatches = content.matchAll(/`(?:new\s+)?(App\.\w+(?:\.\w+)*)\s*\(?[^`]*`/g);
   for (const m of inlineCodeMatches) apis.add(m[1]);
 
+  return apis;
+}
+
+/**
+ * 从 SKILL.md 提取 API 白名单，并自动跟随其引用的 chapters/ 子文件。
+ *
+ * 背景：skill 库于 2026-06 起将大模块（scene/camera-control/environment/bimapi 等）
+ * 拆分为「SKILL.md 索引 + chapters/*.md 分章」。真实 API 签名已挪进各 chapter，
+ * SKILL.md 主文件几乎不再含 API。若白名单只抽 SKILL.md，会漏掉 App.Scene.Create 等
+ * 高频真实 API，导致 trigger_self_evaluation 误杀。
+ *
+ * 解法：读 SKILL.md → 抽 API → 解析其中相对引用的 chapters/*.md → 逐个拉取并合并抽取。
+ * 同源同库、无新增清单、跟随拆分结构自动补全，符合单一数据源原则。
+ */
+async function extractApiFromSkillWithChapters(skillPath: string, content?: string): Promise<Set<string>> {
+  const text = content ?? await readKnowledgeFile(skillPath);
+  const apis = extractApiFromSkillContent(text);
+
+  // 解析 chapters/ 相对引用（如 [`chapters/01-create.md`](chapters/01-create.md)）
+  const chapterRefs = new Set<string>();
+  for (const m of text.matchAll(/chapters\/[\w\-./]+\.md/g)) chapterRefs.add(m[0]);
+  if (chapterRefs.size === 0) return apis;
+
+  // 拼接为绝对路径：SKILL.md 所在目录 + 相对引用
+  const baseDir = skillPath.includes('/') ? skillPath.slice(0, skillPath.lastIndexOf('/') + 1) : '';
+  for (const ref of chapterRefs) {
+    try {
+      const chPath = baseDir + ref;
+      const chContent = await readKnowledgeFile(chPath);
+      for (const a of extractApiFromSkillContent(chContent)) apis.add(a);
+    } catch {
+      // 子文件读取失败跳过，不影响主文件已抽取的白名单
+    }
+  }
   return apis;
 }
 
@@ -910,8 +944,7 @@ async function validateGeneratedCode(
   for (const api of extraApiList) whitelist.add(api);
   for (const sp of skillPaths) {
     try {
-      const content = await readKnowledgeFile(sp);
-      const apis = extractApiFromSkillContent(content);
+      const apis = await extractApiFromSkillWithChapters(sp);
       for (const api of apis) whitelist.add(api);
     } catch {
       // 文件读取失败 → 跳过（已在 onboarding 层校验）
