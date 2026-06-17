@@ -24,7 +24,10 @@
                 "initialization",
                 "init"
             ],
-            "relatedSkills": []
+            "relatedSkills": [
+                "reference/renderer/SKILL.md",
+                "reference/system/plugin/SKILL.md"
+            ]
         },
         {
             "domain": "renderer",
