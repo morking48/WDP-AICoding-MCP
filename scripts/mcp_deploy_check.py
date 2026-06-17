@@ -95,7 +95,14 @@ def main():
     new_skills = [p for p in added if p.endswith("SKILL.md")]
     uncovered = [p for p in new_skills if not is_covered(p, route_exact, route_prefixes)]
 
-    log(f"相对基线: 新增{len(added)} 删除{len(removed)} 变更{len(changed)} | 新SKILL{len(new_skills)} 未覆盖{len(uncovered)}")
+    # 结构性重构信号：skill 库把通用知识拆分/收敛到子文件时，门禁白名单抽取逻辑可能需适配，
+    # 否则真实 API 会被误判为幻觉（历史教训：chapters 拆分、_shared 基类/工厂方法收敛）。
+    # 这类变化不体现为"新增 SKILL.md"，故单独按文件名模式检测，作为部署/适配提示。
+    new_chapters = [p for p in added if "/chapters/" in p and p.endswith(".md")]
+    new_shared   = [p for p in added if "/_shared/" in p and p.endswith(".md")]
+    struct_signal = bool(new_chapters or new_shared)
+
+    log(f"相对基线: 新增{len(added)} 删除{len(removed)} 变更{len(changed)} | 新SKILL{len(new_skills)} 未覆盖{len(uncovered)} | 新chapters{len(new_chapters)} 新_shared{len(new_shared)}")
 
     # 更新基线（无论结果，记录当前状态供明日对比）
     json.dump({"checked_at": f"{datetime.now():%Y-%m-%d %H:%M:%S}",
@@ -103,21 +110,27 @@ def main():
                "files": {k: list(v) for k, v in cur.items()}},
               open(BASELINE, "w", encoding="utf-8"), ensure_ascii=False)
 
-    if uncovered:
-        # 需要部署：输出结构化信息供 cron 写企微
-        log("判定: 需要重新部署（出现未被路由覆盖的新模块）")
+    if uncovered or struct_signal:
+        # 需要关注：可能需补路由（新模块）或适配白名单抽取（结构性重构）后重新部署
+        log("判定: 需要关注（新模块未覆盖 或 出现结构性重构信号）")
         print("NEED_DEPLOY")
         print(f"ROUTE_VERSION::{route_ver}")
-        print(f"NEW_MODULES::{len(uncovered)}")
-        for p in uncovered:
-            print(f"  - {p}")
+        if uncovered:
+            print(f"NEW_MODULES::{len(uncovered)}")
+            for p in uncovered:
+                print(f"  - {p}")
+        if struct_signal:
+            print(f"STRUCT_REFACTOR::新增chapters分章{len(new_chapters)}个/新增_shared共享文档{len(new_shared)}个")
+            for p in (new_chapters + new_shared)[:10]:
+                print(f"  ~ {p}")
+            print("STRUCT_HINT::知识库结构调整（章节拆分/通用方法收敛）可能导致真实API被门禁误判，需确认白名单抽取是否覆盖新结构，再决定是否部署。")
         # 附带变更概况（仅计数，客观）
-        print(f"CONTEXT::新增{len(added)}文件/变更{len(changed)}/删除{len(removed)}（其中未覆盖新模块{len(uncovered)}个）")
+        print(f"CONTEXT::新增{len(added)}文件/变更{len(changed)}/删除{len(removed)}")
     else:
-        log("判定: 不需要部署（无新模块或新模块已被路由覆盖；其余为透传消化的内容变更）")
+        log("判定: 不需要部署（无新模块、无结构性重构；其余为透传消化的内容变更）")
         print("NO_DEPLOY")
         if not first_run and (added or changed):
-            print(f"CONTEXT::skill库有变化但均透传消化（新增{len(added)}/变更{len(changed)}/删除{len(removed)}，无未覆盖新模块）")
+            print(f"CONTEXT::skill库有变化但均透传消化（新增{len(added)}/变更{len(changed)}/删除{len(removed)}，无未覆盖新模块、无结构性重构）")
 
     log("=== 完成 ===")
 
