@@ -684,7 +684,10 @@ const consequenceBlock = `⚠️ 所有 WDP API 签名以 Skill 文件为准，�
   for (const sp of matchedSkills) {
     try {
 const content = await readKnowledgeFile(sp);
-      const apis = [...await extractApiFromSkillWithChapters(sp, content)];
+      // 摘要仅取主 SKILL.md 的 API（每模块截前 30 个作预览），不下钻 chapters：
+      // 启动是每次必经路径，为"摘要"拉全量 chapters 会拖慢响应且无防幻觉收益。
+      // 完整白名单（含 chapters）在 trigger_self_evaluation 门禁阶段才需要、也才构建。
+      const apis = [...extractApiFromSkillContent(content)];
       const verReqs = extractSkillVersionRequirements(content);
       if (apis.length > 0 || verReqs.length > 0) {
         skillApiSummaries.push({ path: sp, apis: apis.slice(0, 30), version_requirements: verReqs });
@@ -903,32 +906,35 @@ function extractApiCallsFromCode(code: string): Array<{ line: number; api: strin
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    // new App.Xxx(
-    const cm = line.match(/new\s+(App\.\w+)\s*\(/);
-    if (cm) {
-      results.push({ line: i + 1, api: cm[1] });
-      continue;
+    // new App.Xxx(  —— 一行可能有多个，全部抽取
+    for (const m of line.matchAll(/new\s+(App\.\w+)\s*\(/g)) {
+      results.push({ line: i + 1, api: m[1] });
     }
 
-    // App.Xxx.Yyy(
-    const smm = line.match(/(App\.\w+(?:\.\w+)+)\s*\(/);
-    if (smm) {
-      results.push({ line: i + 1, api: smm[1] });
-      continue;
+    // App.Xxx.Yyy(  —— 一行可能有多个，全部抽取
+    for (const m of line.matchAll(/(App\.\w+(?:\.\w+)+)\s*\(/g)) {
+      results.push({ line: i + 1, api: m[1] });
     }
 
-    // entityObj.methodName( where methodName is PascalCase
-    const emm = line.match(/([a-zA-Z_]\w*)\.(\w+)\s*\(/);
-    if (emm && emm[2].charAt(0).toUpperCase() === emm[2].charAt(0) && !emm[1].startsWith('App')) {
-      // 过滤掉 JS 原生方法
-      const nativeMethods = new Set(['Map', 'Set', 'Array', 'Date', 'Math', 'JSON', 'Object', 'String', 'Number', 'Boolean', 'Promise', 'Error', 'RegExp', 'parseInt', 'parseFloat']);
-      if (!nativeMethods.has(emm[1]) && !['require', 'console', 'process'].includes(emm[1])) {
-        results.push({ line: i + 1, api: `.${emm[2]}` });
+    // entityObj.methodName( where methodName is PascalCase —— 全部抽取
+    for (const m of line.matchAll(/([a-zA-Z_]\w*)\.(\w+)\s*\(/g)) {
+      if (m[2].charAt(0).toUpperCase() === m[2].charAt(0) && !m[1].startsWith('App')) {
+        const nativeMethods = new Set(['Map', 'Set', 'Array', 'Date', 'Math', 'JSON', 'Object', 'String', 'Number', 'Boolean', 'Promise', 'Error', 'RegExp', 'parseInt', 'parseFloat']);
+        if (!nativeMethods.has(m[1]) && !['require', 'console', 'process'].includes(m[1])) {
+          results.push({ line: i + 1, api: `.${m[2]}` });
+        }
       }
     }
   }
 
-  return results;
+  // 去重（同一行同一 API 多次出现只记一次，避免重复判幻觉）
+  const seen = new Set<string>();
+  return results.filter(r => {
+    const key = `${r.line}::${r.api}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 // ========== API 参数提取 & 校验（trigger_self_evaluation 硬校验3） ==========
@@ -1244,6 +1250,21 @@ case 'list_skills': {
       const generatedCode = (args.generated_code as string) || '';
       const usedSkills = (args.used_skills as string[]) || [];
       const writtenFiles = (args.written_files as string[]) || [];
+
+      // 防门禁空转：代码里确实调用了 WDP API，却没传 used_skills（弱模型常见漏传），
+      // 此时若按原逻辑会直接放行，门禁形同虚设。改为返回明确补传指令，不放水也不误判幻觉。
+      // （没调任何 WDP API 的纯胶水代码不受影响——下方 usedApiCount 为 0 时跳过此拦截。）
+      if (generatedCode && usedSkills.length === 0) {
+        const usedApiCount = extractApiCallsFromCode(generatedCode).length;
+        if (usedApiCount > 0) {
+          return {
+            passed: false,
+            blocked: true,
+            message: `🚨 代码中检测到 ${usedApiCount} 处 WDP API 调用，但未提供 used_skills，无法校验 API 是否真实存在。请传入 used_skills（取自 start_wdp_workflow 返回的 matched_skills），再次调用 trigger_self_evaluation。`,
+            next_step: '传入 used_skills（= workflow_result.matched_skills）后重新调用 trigger_self_evaluation。',
+          };
+        }
+      }
 
       // 硬校验1：API 白名单比对
       let apiCheckResult: { passed: boolean; hallucinated: HallucinatedApi[]; totalApis: number; whitelistSize: number } | null = null;
