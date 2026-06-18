@@ -669,6 +669,10 @@
             "skillPath": "reference/scene/scene/SKILL.md",
             "keywords": [
                 "场景",
+                "创建",
+                "添加",
+                "更新",
+                "实体",
                 "批量操作",
                 "查询",
                 "删除",

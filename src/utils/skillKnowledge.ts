@@ -788,16 +788,12 @@ async function extractApiFromSkillWithChapters(skillPath: string, content?: stri
   const text = content ?? await readKnowledgeFile(skillPath);
   const apis = extractApiFromSkillContent(text);
 
-  // 解析 chapters/ 相对引用（如 [`chapters/01-create.md`](chapters/01-create.md)）
-  const chapterRefs = new Set<string>();
-  for (const m of text.matchAll(/chapters\/[\w\-./]+\.md/g)) chapterRefs.add(m[0]);
-  if (chapterRefs.size === 0) return apis;
-
-  // 拼接为绝对路径：SKILL.md 所在目录 + 相对引用
-  const baseDir = skillPath.includes('/') ? skillPath.slice(0, skillPath.lastIndexOf('/') + 1) : '';
-  for (const ref of chapterRefs) {
+  // 解析子文件引用：chapters/*.md（相对路径）与 reference/.../callback.md（事件回调，绝对路径）
+  // 拆分重构后，API/版本声明可能落在这两类子文件里，需一并跟读。
+  const subRefs = collectSubDocRefs(text, skillPath);
+  if (subRefs.size === 0) return apis;
+  for (const chPath of subRefs) {
     try {
-      const chPath = baseDir + ref;
       const chContent = await readKnowledgeFile(chPath);
       for (const a of extractApiFromSkillContent(chContent)) apis.add(a);
     } catch {
@@ -805,6 +801,22 @@ async function extractApiFromSkillWithChapters(skillPath: string, content?: stri
     }
   }
   return apis;
+}
+
+/**
+ * 收集一份 SKILL.md 引用的子文档绝对路径：
+ *  - chapters/xxx.md  —— 相对路径，拼接 SKILL.md 所在目录
+ *  - reference/.../callback.md —— 事件回调文档，文中以绝对路径引用，直接使用
+ * 返回去重后的绝对路径集合。
+ */
+function collectSubDocRefs(text: string, skillPath: string): Set<string> {
+  const refs = new Set<string>();
+  const baseDir = skillPath.includes('/') ? skillPath.slice(0, skillPath.lastIndexOf('/') + 1) : '';
+  // 相对引用：chapters/*.md
+  for (const m of text.matchAll(/chapters\/[\w\-./]+\.md/g)) refs.add(baseDir + m[0]);
+  // 绝对引用：reference/.../callback.md（事件回调）
+  for (const m of text.matchAll(/reference\/[\w\-./]+\/callback\.md/g)) refs.add(m[0]);
+  return refs;
 }
 
 /**
@@ -817,16 +829,12 @@ async function extractVersionReqsWithChapters(skillPath: string, content?: strin
   const text = content ?? await readKnowledgeFile(skillPath);
   const merged: Array<{ feature: string; minVersion: string }> = [...extractSkillVersionRequirements(text)];
 
-  const chapterRefs = new Set<string>();
-  for (const m of text.matchAll(/chapters\/[\w\-./]+\.md/g)) chapterRefs.add(m[0]);
-  if (chapterRefs.size > 0) {
-    const baseDir = skillPath.includes('/') ? skillPath.slice(0, skillPath.lastIndexOf('/') + 1) : '';
-    for (const ref of chapterRefs) {
-      try {
-        const chContent = await readKnowledgeFile(baseDir + ref);
-        merged.push(...extractSkillVersionRequirements(chContent));
-      } catch { /* 子文件读取失败跳过 */ }
-    }
+  const subRefs = collectSubDocRefs(text, skillPath);
+  for (const chPath of subRefs) {
+    try {
+      const chContent = await readKnowledgeFile(chPath);
+      merged.push(...extractSkillVersionRequirements(chContent));
+    } catch { /* 子文件读取失败跳过 */ }
   }
   // 去重（同 feature+minVersion 只留一条）
   const seen = new Set<string>();
