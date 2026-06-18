@@ -807,6 +807,37 @@ async function extractApiFromSkillWithChapters(skillPath: string, content?: stri
   return apis;
 }
 
+/**
+ * 提取模块版本要求，并跟随 chapters 子文件。
+ * 背景同白名单：拆分后大量 API 的版本声明（"xxx 需要 WDPAPI >= 1.14.0"）挪进了
+ * chapters/*.md，主 SKILL.md 抽不到 → 版本兼容警告对拆分模块失效。
+ * 解法：主文件 + 其引用的 chapters 一并抽取并合并去重。
+ */
+async function extractVersionReqsWithChapters(skillPath: string, content?: string): Promise<Array<{ feature: string; minVersion: string }>> {
+  const text = content ?? await readKnowledgeFile(skillPath);
+  const merged: Array<{ feature: string; minVersion: string }> = [...extractSkillVersionRequirements(text)];
+
+  const chapterRefs = new Set<string>();
+  for (const m of text.matchAll(/chapters\/[\w\-./]+\.md/g)) chapterRefs.add(m[0]);
+  if (chapterRefs.size > 0) {
+    const baseDir = skillPath.includes('/') ? skillPath.slice(0, skillPath.lastIndexOf('/') + 1) : '';
+    for (const ref of chapterRefs) {
+      try {
+        const chContent = await readKnowledgeFile(baseDir + ref);
+        merged.push(...extractSkillVersionRequirements(chContent));
+      } catch { /* 子文件读取失败跳过 */ }
+    }
+  }
+  // 去重（同 feature+minVersion 只留一条）
+  const seen = new Set<string>();
+  return merged.filter(r => {
+    const k = `${r.feature}@@${r.minVersion}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
 // ========== 基类通用方法白名单（来自 _shared/object-base.md） ==========
 // skill 库于 2026-06 起将所有实体对象的通用方法（SetLocation/GetVisible/SetEntityName/
 // Delete/Update/onClick… 以及每字段自动派生的 GetXxx/SetXxx 三套访问器）统一收敛到
@@ -1309,8 +1340,7 @@ case 'list_skills': {
       if (sdkVer && usedSkills.length > 0) {
         for (const sp of usedSkills) {
           try {
-            const content = await readKnowledgeFile(sp);
-            const verReqs = extractSkillVersionRequirements(content);
+            const verReqs = await extractVersionReqsWithChapters(sp);
             for (const { feature, minVersion } of verReqs) {
               const req = minVersion.split('.').map(Number);
               const sdk = sdkVer.split('.').map(Number);
