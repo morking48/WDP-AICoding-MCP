@@ -770,6 +770,17 @@ function extractApiFromSkillContent(content: string): Set<string> {
   const inlineCodeMatches = content.matchAll(/`(?:new\s+)?(App\.\w+(?:\.\w+)*)\s*\(?[^`]*`/g);
   for (const m of inlineCodeMatches) apis.add(m[1]);
 
+  // C3: 标题中反引号包裹的裸方法名（模块专有实体方法，非 App. 前缀），如
+  //     `### `SetOtherNodesXray(nodeIds, opacity?)``。这类实体方法仅在标题声明、
+  //     库内无 `entity.xxx()` 代码块示例（demo 常在调试仓）时，C1/C2（只匹配 App.*）
+  //     与代码块抽取（需 entity.Method( 形态）都会漏抽 → 门禁误杀合法调用。
+  //     标题是 API 权威定义处，抽取不引入幻觉（同源、无新增清单）。以 `.方法名` 形态加入，
+  //     与实体方法调用抽取（.SetXxx）对齐。一个标题可含多个方法（`A(...)` / `B(...)`）。
+  const headingBareMethodMatches = content.matchAll(/^#{1,6}\s+.*$/gm);
+  for (const line of headingBareMethodMatches) {
+    for (const mm of line[0].matchAll(/`([A-Z]\w+)\s*\(/g)) apis.add(`.${mm[1]}`);
+  }
+
   return apis;
 }
 
