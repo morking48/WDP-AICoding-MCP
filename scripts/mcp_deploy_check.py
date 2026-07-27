@@ -18,9 +18,9 @@ MCP 是否需要重新部署 · 每日自动检测
 import urllib.request, json, ssl, os, re, sys
 from datetime import datetime
 
-SKILL_SERVER = "http://wdpapi-skill.51aes.com"
-ROUTE_MAP    = r"F:\wdp-mcp-local\config\skill-route-mapping.json"
-BASELINE     = r"F:\wdp-mcp-local\scripts\.mcp_deploy_check_baseline.json"   # 本检测专用基线（运行时状态，已 gitignore）
+SKILL_SERVER = "https://wdpapi-skill.51aes.com"
+ROUTE_MAP    = r"E:\\wdp-mcp-local\\config\\skill-route-mapping.json"
+BASELINE     = r"E:\\wdp-mcp-local\\scripts\\.mcp_deploy_check_baseline.json"   # 本检测专用基线（运行时状态，已 gitignore）
 ctx = ssl.create_default_context(); ctx.check_hostname=False; ctx.verify_mode=ssl.CERT_NONE
 log = lambda m: print(f"[deploy-check] {m}", flush=True)
 

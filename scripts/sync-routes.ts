@@ -21,7 +21,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 // ========== 配置 ==========
-const SKILL_SERVER_URL = process.env.SKILL_SERVER_URL || 'http://wdpapi-skill.51aes.com';
+const SKILL_SERVER_URL = process.env.SKILL_SERVER_URL || 'https://wdpapi-skill.51aes.com';
 const CONFIG_DIR = path.resolve(__dirname, '../config');
 const ROUTE_MAPPING_PATH = path.join(CONFIG_DIR, 'skill-route-mapping.json');
 const SCENARIOS_DIR = path.join(CONFIG_DIR, 'business-scenarios');

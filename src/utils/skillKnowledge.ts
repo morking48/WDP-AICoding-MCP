@@ -15,7 +15,7 @@ import https from 'https';
 
 // ========== 配置 ==========
 // v2: 2026-05-28 published version gate
-const SKILL_SERVER_URL = process.env.SKILL_SERVER_URL || 'http://wdpapi-skill.51aes.com';
+const SKILL_SERVER_URL = process.env.SKILL_SERVER_URL || 'https://wdpapi-skill.51aes.com';
 const CACHE_TTL = Number(process.env.CACHE_TTL) || 300;
 const PUBLISHED_API_BASE_URL = process.env.PUBLISHED_API_BASE_URL || 'https://wdpapidoc-admin.51aes.com/api/backend/web';
 const PUBLISHED_VERSIONS_CACHE_TTL = 300_000; // 5 minutes
