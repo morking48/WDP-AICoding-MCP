@@ -51,7 +51,12 @@ def load_route_paths():
 # 已知豁免：不视为"需要补路由的新模块"
 #  - 根 SKILL.md：库总览，非业务模块
 #  - reference/ai/：agentHost 未对外开放，已决定暂不加路由（产研既定结论）
-EXEMPT = {"SKILL.md", "reference/ai/SKILL.md"}
+EXEMPT = {
+    "SKILL.md",
+    "reference/ai/SKILL.md",                                    # agentHost 未对外开放，既定暂不加路由
+    "reference/animation-sequence/SKILL.md",                    # WDPAPI >= 2.5.0，当前发布版 2.3.x，等版本就绪
+    "reference/scene/aes-earth-terrain-overlayer/SKILL.md",     # WDPAPI >= 2.5.0，同上
+}
 
 def is_covered(skill_path, exact, prefixes):
     """新 SKILL 是否已被路由覆盖：精确命中，或其所在目录被某父路由前缀覆盖。"""

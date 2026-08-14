@@ -963,7 +963,11 @@
                 "wmts",
                 "wms",
                 "wfs",
-                "矢量"
+                "矢量",
+                "裁剪",
+                "压平",
+                "clip",
+                "flatten"
             ],
             "aliases": [
                 "gis",
@@ -986,7 +990,9 @@
                 "reference/system/plugin/gisapi/wms/SKILL.md",
                 "reference/system/plugin/gisapi/wfs/SKILL.md",
                 "reference/system/plugin/gisapi/gisvector/SKILL.md",
-                "reference/system/plugin/gisapi/gis-controller/SKILL.md"
+                "reference/system/plugin/gisapi/gis-controller/SKILL.md",
+                "reference/system/plugin/gisapi/3dtiles-clip/SKILL.md",
+                "reference/system/plugin/gisapi/3dtiles-flatten/SKILL.md"
             ]
         },
         {
@@ -1000,7 +1006,8 @@
                 "动态水面",
                 "cae",
                 "点云",
-                "色卡"
+                "色卡",
+                "SHP动态水体"
             ],
             "aliases": [
                 "wim",
@@ -1027,8 +1034,40 @@
                 "reference/system/plugin/wimapi/custom-color-card/SKILL.md",
                 "reference/system/plugin/wimapi/wim-controller/SKILL.md",
                 "reference/system/plugin/wimapi/wim-modeler-river-controller/SKILL.md",
-                "reference/system/plugin/wimapi/wim-modeler-water-controller/SKILL.md"
+                "reference/system/plugin/wimapi/wim-modeler-water-controller/SKILL.md",
+                "reference/system/plugin/wimapi/wim-shp-dynamic-water/SKILL.md"
             ]
+        },
+        {
+            "domain": "api-state-manager",
+            "label": "API状态管理",
+            "skillPath": "reference/system/apistate-manager/SKILL.md",
+            "keywords": [
+                "状态管理",
+                "记录状态",
+                "重置状态",
+                "断线重连",
+                "ApiStateManager",
+                "api state",
+                "reset api"
+            ],
+            "aliases": [
+                "apistate",
+                "api-state",
+                "state-manager"
+            ],
+            "userSynonyms": [
+                "状态快照",
+                "场景基线",
+                "api基线",
+                "重连恢复",
+                "重置api"
+            ],
+            "pathSegments": [
+                "system",
+                "apistate"
+            ],
+            "relatedSkills": []
         },
         {
             "domain": "resource-effects-assets",
