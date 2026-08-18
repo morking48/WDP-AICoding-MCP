@@ -361,13 +361,21 @@ let sessionCleanupTimer: NodeJS.Timeout | null = null;
 function cleanupExpiredSessions(): void {
   const now = Date.now();
   let removed = 0;
+  const validSessionIds = new Set<string>();
   for (const [cacheKey, entry] of sessionIdCache) {
     if (now - entry.lastActive >= SESSION_TTL_MS) {
       sessionMap.delete(entry.id);
       sessionIdCache.delete(cacheKey);
       removed++;
+    } else {
+      validSessionIds.add(entry.id);
     }
   }
+  // 同步清理 skillKnowledge 的会话内已读文件缓存
+  try {
+    const { cleanupSessionReadFiles } = require('./skillKnowledge');
+    cleanupSessionReadFiles(validSessionIds);
+  } catch { /* 模块未加载时忽略 */ }
   if (removed > 0) {
     console.log(`[Logger] 清理过期会话 ${removed} 个，当前活跃会话: ${sessionIdCache.size} 个`);
   }

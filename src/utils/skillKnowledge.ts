@@ -143,6 +143,42 @@ function recallSessionSdkVersion(sessionId: string | undefined): string {
   return cached.sdkVersion;
 }
 
+// ========== 会话内已读文件去重（防重复拉取膨胀上下文） ==========
+// 同一 session 内重复 read_knowledge_file 同一文件时，第二次起返回精简提示。
+// 解决：同会话做多需求时 initialization/builtin 被重复拉取 10+ 次的问题。
+const sessionReadFiles: Map<string, Map<string, { fileHash: string; ts: number }>> = new Map();
+const SESSION_READ_TTL_MS = 30 * 60 * 1000;
+
+function isFileAlreadyRead(sessionId: string | undefined, filePath: string): { read: boolean; fileHash?: string } {
+  if (!sessionId) return { read: false };
+  const files = sessionReadFiles.get(sessionId);
+  if (!files) return { read: false };
+  const entry = files.get(filePath);
+  if (!entry) return { read: false };
+  if (Date.now() - entry.ts > SESSION_READ_TTL_MS) {
+    files.delete(filePath);
+    return { read: false };
+  }
+  return { read: true, fileHash: entry.fileHash };
+}
+
+function markFileRead(sessionId: string | undefined, filePath: string, fileHash: string): void {
+  if (!sessionId) return;
+  let files = sessionReadFiles.get(sessionId);
+  if (!files) {
+    files = new Map();
+    sessionReadFiles.set(sessionId, files);
+  }
+  files.set(filePath, { fileHash, ts: Date.now() });
+}
+
+// 清理过期 session（对齐 logger 的 SESSION_TTL_MS，在 logger cleanup 时一并清理）
+export function cleanupSessionReadFiles(validSessionIds: Set<string>): void {
+  for (const sid of sessionReadFiles.keys()) {
+    if (!validSessionIds.has(sid)) sessionReadFiles.delete(sid);
+  }
+}
+
 // ========== 关键词权重表 ==========
 const KEYWORD_WEIGHTS: Record<string, number> = {
   // 强意图信号（权重 3）：出现即路由
@@ -1216,6 +1252,27 @@ case 'read_knowledge_file': {
       const filePath = args.path as string;
       if (!filePath) return { error: '缺少 path 参数' };
       try {
+        // 强制刷新：先清除已读标记，跳过去重检查
+        const forceRefresh = args.force_refresh === true;
+        if (forceRefresh && sessionId) {
+          const files = sessionReadFiles.get(sessionId);
+          if (files) files.delete(filePath);
+        }
+        // 会话内去重：同 session 已读过的文件，第二次起返回精简提示
+        if (!forceRefresh) {
+          const alreadyRead = isFileAlreadyRead(sessionId, filePath);
+          if (alreadyRead.read) {
+            return {
+              path: filePath,
+              content: `[本会话已读取过此文件，fileHash=${alreadyRead.fileHash}，内容未变。请直接引用此前返回的完整内容，无需重复读取。如需强制重新拉取，请传 force_refresh: true]`,
+              mode: 'dedup_hit',
+              fileHash: alreadyRead.fileHash,
+              version_requirements: [],
+              api_whitelist: [],
+            };
+          }
+        }
+
         const content = await readKnowledgeFile(filePath);
         const forceFull = args.force_full === true;
         // 提取版本要求（逐功能细粒度）
@@ -1223,6 +1280,7 @@ case 'read_knowledge_file': {
         if (forceFull) {
           const { fileHash, lineCount } = generateDigest(content);
           const apiWhitelist = extractApiFromSkillContent(content);
+          markFileRead(sessionId, filePath, fileHash);
           return {
             path: filePath, content, fileHash, lineCount, mode: 'full',
             api_whitelist: [...apiWhitelist],
@@ -1230,6 +1288,7 @@ case 'read_knowledge_file': {
           };
         }
         const { summary, fileHash, lineCount } = generateDigest(content);
+        markFileRead(sessionId, filePath, fileHash);
         return {
           path: filePath, summary, fileHash, lineCount, mode: 'summary',
           version_requirements: versionRequirements,
