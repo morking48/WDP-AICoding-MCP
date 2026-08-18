@@ -121,6 +121,20 @@ const fileCache: Map<string, CacheEntry> = new Map();
 const builtinSkills: Map<string, string> = new Map();
 let routeMapping: RouteMapping | null = null;
 
+// fileCache LRU 容量上限：超出时淘汰最旧条目，防长期运行内存膨胀
+const FILE_CACHE_MAX_ENTRIES = 200;
+
+function fileCacheSet(key: string, entry: CacheEntry): void {
+  // 先删再插，让 Map 的插入序 = 最近使用序
+  fileCache.delete(key);
+  fileCache.set(key, entry);
+  // 超出上限时淘汰最旧条目（Map 迭代序 = 插入序，第一个 key 最旧）
+  if (fileCache.size > FILE_CACHE_MAX_ENTRIES) {
+    const oldest = fileCache.keys().next().value;
+    if (oldest !== undefined) fileCache.delete(oldest);
+  }
+}
+
 // ========== 会话级 SDK 版本缓存（方案S：跨工具调用复用版本信息） ==========
 // start_wdp_workflow 阶段客户端注入 sdk_version；trigger_self_evaluation 阶段
 // 客户端不再注入，故在服务端按 sessionId 缓存后自动回填，无需改动客户端。
@@ -332,7 +346,7 @@ async function fetchSkillFile(filePath: string): Promise<string> {
   }
 
   const content = await response.text();
-  fileCache.set(filePath, { content, timestamp: Date.now() });
+  fileCacheSet(filePath, { content, timestamp: Date.now() });
   console.log(`[SkillKnowledge]   ✅ 文件已缓存: ${filePath} (${content.length} bytes)`);
   return content;
 }
@@ -343,9 +357,10 @@ async function readKnowledgeFile(filePath: string): Promise<string> {
     console.log(`[SkillKnowledge] 📖 读取内置 Skill: ${filePath}`);
     return builtinSkills.get(filePath)!;
   }
-  // 2. 缓存命中
+  // 2. 缓存命中（刷新 LRU 顺序）
   const cached = fileCache.get(filePath);
   if (cached && (Date.now() - cached.timestamp) < CACHE_TTL * 1000) {
+    fileCacheSet(filePath, cached); // 刷新到最近使用位
     console.log(`[SkillKnowledge] 📖 读取缓存: ${filePath} (${cached.content.length} bytes, ${Math.round((Date.now() - cached.timestamp) / 1000)}s 前)`);
     return cached.content;
   }
@@ -716,21 +731,28 @@ const consequenceBlock = `⚠️ 所有 WDP API 签名以 Skill 文件为准，�
   }
 
   // 9. 预提取 API 白名单摘要（不读全文，仅方法名列表，轻量注入防幻觉）
+  // 并发拉取 + 大文件跳过摘要：摘要≠白名单，别为「预览」付「校验」的代价。
+  // manifest 里有 size 信息，>10KB 的文件跳过预提取（AI 仍会在 Step 2 读全文）。
   const skillApiSummaries: Array<{ path: string; apis: string[]; version_requirements?: Array<{ feature: string; minVersion: string }> }> = [];
-  for (const sp of matchedSkills) {
-    try {
-const content = await readKnowledgeFile(sp);
-      // 摘要仅取主 SKILL.md 的 API（每模块截前 30 个作预览），不下钻 chapters：
-      // 启动是每次必经路径，为"摘要"拉全量 chapters 会拖慢响应且无防幻觉收益。
-      // 完整白名单（含 chapters）在 trigger_self_evaluation 门禁阶段才需要、也才构建。
-      const apis = [...extractApiFromSkillContent(content)];
-      const verReqs = extractSkillVersionRequirements(content);
-      if (apis.length > 0 || verReqs.length > 0) {
-        skillApiSummaries.push({ path: sp, apis: apis.slice(0, 30), version_requirements: verReqs });
-      }
-    } catch {
-      // 读取失败跳过，AI 需自行调用 read_knowledge_file
-    }
+  const SUMMARY_MAX_FILE_SIZE = 10 * 1024; // 10KB 以上跳过摘要预提取
+  const summaryPromises = matchedSkills
+    .filter(sp => {
+      const mf = manifestCache.get(sp);
+      return !mf || mf.size <= SUMMARY_MAX_FILE_SIZE; // 未知文件也尝试（可能 manifest 未收录）
+    })
+    .map(async (sp) => {
+      try {
+        const content = await readKnowledgeFile(sp);
+        const apis = [...extractApiFromSkillContent(content)];
+        const verReqs = extractSkillVersionRequirements(content);
+        if (apis.length > 0 || verReqs.length > 0) {
+          return { path: sp, apis: apis.slice(0, 30), version_requirements: verReqs };
+        }
+      } catch { /* 读取失败跳过 */ }
+      return null;
+    });
+  for (const r of await Promise.all(summaryPromises)) {
+    if (r) skillApiSummaries.push(r);
   }
 
   return {
@@ -1318,14 +1340,26 @@ case 'list_skills': {
       const fullReadSkills = (args.full_read_skills as string[]) || [];
       const required = (workflowResult?.matched_skills || []) as string[];
 
-      // 基础校验：是否都读了
+      // 基础校验：是否都读了（信任 AI 声明）
       const notRead = required.filter((s: string) => !skillsRead.includes(s));
       // 全文校验：如果提供了 full_read_skills，检查是否都用全文模式读过
       const notFullRead = fullReadSkills.length > 0
         ? required.filter((s: string) => !fullReadSkills.includes(s))
         : [];
 
-      const passed = notRead.length === 0 && notFullRead.length === 0;
+      // 交叉验证：用 sessionReadFiles 核实 AI 声明的文件是否真正读过
+      // 防止弱模型编造 skills_read 列表跳过门禁1
+      const sessionFiles = sessionId ? sessionReadFiles.get(sessionId) : undefined;
+      const notActuallyRead: string[] = [];
+      if (sessionFiles && sessionFiles.size > 0) {
+        for (const s of skillsRead) {
+          if (!sessionFiles.has(s)) notActuallyRead.push(s);
+        }
+      }
+      // 如果 sessionReadFiles 里一条记录都没有（可能 MCP 刚重启），退回到信任模式
+      const trustMode = !sessionFiles || sessionFiles.size === 0;
+
+      const passed = notRead.length === 0 && notFullRead.length === 0 && (trustMode || notActuallyRead.length === 0);
 
       let message: string;
       let nextStep: string;
@@ -1336,6 +1370,7 @@ case 'list_skills': {
         const issues: string[] = [];
         if (notRead.length > 0) issues.push(`${notRead.length} 个 Skill 未读取: ${notRead.join(', ')}`);
         if (notFullRead.length > 0) issues.push(`${notFullRead.length} 个 Skill 未用全文模式读取: ${notFullRead.join(', ')}。请用 read_knowledge_file 传 force_full: true 重新读取`);
+        if (!trustMode && notActuallyRead.length > 0) issues.push(`${notActuallyRead.length} 个 Skill 声明已读但本会话无读取记录: ${notActuallyRead.join(', ')}。请实际调用 read_knowledge_file 读取`);
         message = `🚨 防幻觉阻断：${issues.join('；')}。禁止生成代码！这些文件包含正确的 API 签名和参数格式，跳过将导致 API 幻觉。`;
         nextStep = '📖 请继续读取上述缺失的 Skill 文件（force_full: true），然后重新调用 enforce_routing_check。';
       }
@@ -1350,6 +1385,8 @@ case 'list_skills': {
         full_read_count: fullReadSkills.length,
         missing_skills: notRead,
         not_full_read: notFullRead,
+        not_actually_read: trustMode ? [] : notActuallyRead,
+        trust_mode: trustMode,
         message,
         next_step: nextStep,
       };
@@ -1357,8 +1394,23 @@ case 'list_skills': {
 
     case 'trigger_self_evaluation': {
       const generatedCode = (args.generated_code as string) || '';
-      const usedSkills = (args.used_skills as string[]) || [];
+      let usedSkills = (args.used_skills as string[]) || [];
       const writtenFiles = (args.written_files as string[]) || [];
+
+      // 交叉验证：过滤掉本会话未真正读过的文件，防止 AI 编造 used_skills 扩大白名单
+      // 与 enforce_routing_check 同一数据源（sessionReadFiles），trustMode 逻辑一致：
+      // sessionReadFiles 为空时（刚重启/未读过任何文件）退回信任模式。
+      const sessionFilesForValidation = sessionId ? sessionReadFiles.get(sessionId) : undefined;
+      const trustMode = !sessionFilesForValidation || sessionFilesForValidation.size === 0;
+      let filteredCount = 0;
+      if (!trustMode && usedSkills.length > 0) {
+        const before = usedSkills.length;
+        usedSkills = usedSkills.filter(sp => sessionFilesForValidation.has(sp));
+        filteredCount = before - usedSkills.length;
+        if (filteredCount > 0) {
+          console.log(`[trigger_self_evaluation] 过滤未读 skill: ${filteredCount} 个（session ${sessionId}）`);
+        }
+      }
 
       // 防门禁空转：代码里确实调用了 WDP API，却没传 used_skills（弱模型常见漏传），
       // 此时若按原逻辑会直接放行，门禁形同虚设。改为返回明确补传指令，不放水也不误判幻觉。
@@ -1476,6 +1528,7 @@ case 'list_skills': {
             passed: paramCheckResult.passed, total_checks: paramCheckResult.totalChecks, issues: paramCheckResult.issues,
           } : null,
           sdk_version_warnings: sdkVersionWarnings, soft_checks: checks, written_files: writtenFiles, used_skills: usedSkills,
+          filtered_skills_count: filteredCount,
           message: [`🚨 校验未通过，请修正以下问题后重新调用 trigger_self_evaluation：`, ...errors].join('\n'),
         };
       }
@@ -1505,6 +1558,23 @@ case 'list_skills': {
 }
 
 // ========== 初始化 ==========
+// manifest 自动刷新间隔（30 分钟）：skill 库更新后无需重启 MCP 进程
+const MANIFEST_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
+let manifestRefreshTimer: NodeJS.Timeout | null = null;
+
+function startManifestRefreshTimer(): void {
+  if (manifestRefreshTimer) clearInterval(manifestRefreshTimer);
+  manifestRefreshTimer = setInterval(async () => {
+    try {
+      console.log('[SkillKnowledge] 🔄 定时刷新 manifest...');
+      await fetchSkillsManifest();
+      console.log(`[SkillKnowledge] ✅ manifest 已刷新: ${manifestCache.size} 个文件`);
+    } catch (e: any) {
+      console.warn(`[SkillKnowledge] ⚠️ manifest 定时刷新失败（沿用旧缓存）: ${e.message}`);
+    }
+  }, MANIFEST_REFRESH_INTERVAL_MS);
+}
+
 export async function initSkillKnowledge(): Promise<void> {
   // 1. 先加载内置 Skill + 路由（不依赖网络）
   const builtinDir = path.resolve(__dirname, '../../builtin');
@@ -1528,6 +1598,8 @@ export async function initSkillKnowledge(): Promise<void> {
   } catch (e: any) {
     console.warn(`[SkillKnowledge] Manifest 拉取失败（内置 Skill 仍可用）: ${e.message}`);
   }
+  // 3. 启动 manifest 定时自动刷新
+  startManifestRefreshTimer();
 }
 
 export { readKnowledgeFile, listKnowledgeEntries, generateDigest, fetchSkillsManifest, fetchSkillFile, buildWorkflowResponse };
